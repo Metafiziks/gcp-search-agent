@@ -75,6 +75,8 @@ def search_knowledge_base(query: str) -> str:
 
         title = data.get("title", "") or result.document.id
         link = data.get("link", "")
+        if link.startswith("gs://"):
+            link = link.replace("gs://", "https://storage.googleapis.com/", 1)
 
         header = f"[{title}]({link})" if link else f"[{title}]"
         excerpts.append(f"{header}\n{content}" if content else header)
