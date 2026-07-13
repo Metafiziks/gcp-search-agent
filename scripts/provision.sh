@@ -10,10 +10,23 @@ echo ""
 echo "=== Provision: Infrastructure + Search Setup ==="
 echo ""
 
-# --- Bootstrap: enable CRM API first (required for all IAM operations) ---
-echo "► Bootstrapping Cloud Resource Manager API..."
-gcloud services enable cloudresourcemanager.googleapis.com --project="${PROJECT_ID}"
-echo "  ✓ cloudresourcemanager.googleapis.com enabled"
+# --- Bootstrap: enable all required APIs via gcloud before Terraform runs ---
+# CRM must be enabled first (chicken-and-egg with Terraform IAM resources).
+# Enable all APIs upfront so Terraform doesn't race against propagation.
+echo "► Bootstrapping required GCP APIs (this takes ~1 min)..."
+gcloud services enable \
+  cloudresourcemanager.googleapis.com \
+  run.googleapis.com \
+  aiplatform.googleapis.com \
+  discoveryengine.googleapis.com \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com \
+  storage.googleapis.com \
+  iam.googleapis.com \
+  iamcredentials.googleapis.com \
+  --project="${PROJECT_ID}"
+echo "  ✓ APIs enabled — waiting 30s for propagation..."
+sleep 30
 echo ""
 
 # --- Terraform ---
