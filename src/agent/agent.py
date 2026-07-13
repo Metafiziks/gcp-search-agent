@@ -84,7 +84,7 @@ def search_knowledge_base(query: str) -> str:
 
 root_agent = Agent(
     name="search_agent",
-    model=os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-001"),
+    model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
     instruction=INSTRUCTIONS,
     tools=[search_knowledge_base],
 )
