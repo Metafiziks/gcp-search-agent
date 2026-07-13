@@ -38,10 +38,10 @@ resource "google_storage_bucket" "docs" {
   depends_on = [google_project_service.apis]
 }
 
-resource "google_storage_bucket_iam_binding" "public_read" {
-  bucket  = google_storage_bucket.docs.name
-  role    = "roles/storage.objectViewer"
-  members = ["allUsers"]
+resource "google_storage_bucket_iam_member" "public_read" {
+  bucket = google_storage_bucket.docs.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
 
 # Artifact Registry for agent container images
