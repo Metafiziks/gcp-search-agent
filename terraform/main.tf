@@ -33,7 +33,7 @@ resource "google_storage_bucket" "docs" {
   name                        = "${var.project_id}-${var.env_name}-docs"
   location                    = var.region
   force_destroy               = true
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
 
   depends_on = [google_project_service.apis]
 }
