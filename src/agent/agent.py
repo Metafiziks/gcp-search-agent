@@ -34,15 +34,15 @@ def search_knowledge_base(query: str) -> str:
     """
     project_id = os.environ["PROJECT_ID"]
     datastore_id = os.environ["SEARCH_DATASTORE_ID"]
+    engine_id = os.environ.get("SEARCH_ENGINE_ID", datastore_id.replace("-docs", "-search"))
     location = os.environ.get("SEARCH_LOCATION", "global")
 
     client = discoveryengine.SearchServiceClient()
     serving_config = (
         f"projects/{project_id}/locations/{location}"
-        f"/collections/default_collection/engines/{datastore_id}-search"
+        f"/collections/default_collection/engines/{engine_id}"
         f"/servingConfigs/default_config"
     )
-
     try:
         request = discoveryengine.SearchRequest(
             serving_config=serving_config,
