@@ -24,7 +24,7 @@ Use absorbent pads and follow established spill response procedures.
 | Resource | Purpose |
 |---|---|
 | Cloud Run | Hosts the ADK agent |
-| Vertex AI Search (Enterprise) | RAG — indexes and retrieves documents with extractive answers |
+| Vertex AI Search (Enterprise) | RAG — indexes documents and retrieves relevant passages (extractive answers) for the LLM to synthesize |
 | Cloud Storage | Stores the document corpus (public read for citation links) |
 | Artifact Registry | Container images for agent builds |
 | Workload Identity Federation | Secretless GitHub Actions auth |
