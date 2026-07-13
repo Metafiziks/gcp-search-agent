@@ -79,6 +79,9 @@ bash scripts/provision.sh
 
 # Step 2: Deploy agent to Cloud Run (~3 min)
 bash scripts/deploy.sh
+
+# Tear everything down when done
+bash scripts/teardown.sh
 ```
 
 ## Adding your documents
@@ -129,6 +132,19 @@ Then every push to `main` automatically redeploys the agent via `.github/workflo
 | Search | Vertex AI Search Enterprise | Azure AI Search |
 | Auth | Workload Identity Federation | Azure OIDC |
 | CI/CD | GitHub Actions | GitHub Actions |
+| **Teardown** | `bash scripts/teardown.sh` | `azd down` |
+
+## Teardown
+
+```bash
+export PROJECT_ID=your-gcp-project-id
+export ENV_NAME=search-agent   # must match what you used for provision
+export REGION=us-central1
+
+bash scripts/teardown.sh
+```
+
+Deletes the Cloud Run service first (deployed outside Terraform by ADK), then runs `terraform destroy` to remove all remaining resources — storage bucket, Vertex AI Search engine, data store, service accounts, Workload Identity pool, and Artifact Registry.
 
 ## Troubleshooting
 
