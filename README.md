@@ -128,7 +128,7 @@ Then every push to `main` automatically redeploys the agent via `.github/workflo
 |---|---|---|
 | Provision | `terraform apply` | `azd provision` (Bicep) |
 | Deploy | `adk deploy cloud_run` | `azd deploy` (remote_build) |
-| LLM | Gemini 2.5 Flash (Agent Platform) | GPT-4o (Azure AI Foundry) |
+| LLM | Gemini 2.5 Flash (Agent Platform) | GPT-5 (Azure AI Foundry) |
 | Search | Vertex AI Search Enterprise | Azure AI Search |
 | Auth | Workload Identity Federation | Azure OIDC |
 | CI/CD | GitHub Actions | GitHub Actions |
