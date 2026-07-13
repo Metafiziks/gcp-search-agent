@@ -10,6 +10,23 @@ echo ""
 echo "=== Provision: Infrastructure + Search Setup ==="
 echo ""
 
+# --- Prerequisite: Vertex AI terms of service ---
+# GCP requires a one-time console acceptance of Vertex AI Generative AI terms.
+# This cannot be automated via CLI — it must be done before first use.
+echo "┌─────────────────────────────────────────────────────────────────┐"
+echo "│  PREREQUISITE: Vertex AI must be activated in the GCP Console   │"
+echo "│                                                                  │"
+echo "│  1. Open this URL in your browser:                               │"
+echo "│     https://console.cloud.google.com/vertex-ai?project=${PROJECT_ID}"
+echo "│                                                                  │"
+echo "│  2. Click 'Enable APIs' if prompted, then return here.           │"
+echo "│                                                                  │"
+echo "│  This is a one-time step per project. Skip if already done.      │"
+echo "└─────────────────────────────────────────────────────────────────┘"
+echo ""
+read -r -p "  Press Enter once Vertex AI is activated to continue..." _
+echo ""
+
 # --- Bootstrap: enable all required APIs via gcloud before Terraform runs ---
 # CRM must be enabled first (chicken-and-egg with Terraform IAM resources).
 # Enable all APIs upfront so Terraform doesn't race against propagation.
