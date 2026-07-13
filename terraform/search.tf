@@ -22,7 +22,7 @@ resource "google_discovery_engine_search_engine" "search" {
   data_store_ids = [google_discovery_engine_data_store.docs.data_store_id]
 
   search_engine_config {
-    search_tier    = "SEARCH_TIER_STANDARD"
+    search_tier    = "SEARCH_TIER_ENTERPRISE"
     search_add_ons = ["SEARCH_ADD_ON_LLM"]
   }
 

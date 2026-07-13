@@ -39,7 +39,7 @@ def search_knowledge_base(query: str) -> str:
     client = discoveryengine.SearchServiceClient()
     serving_config = (
         f"projects/{project_id}/locations/{location}"
-        f"/collections/default_collection/dataStores/{datastore_id}"
+        f"/collections/default_collection/engines/{datastore_id}-search"
         f"/servingConfigs/default_config"
     )
 
