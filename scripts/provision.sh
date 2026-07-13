@@ -24,6 +24,7 @@ gcloud services enable \
   storage.googleapis.com \
   iam.googleapis.com \
   iamcredentials.googleapis.com \
+  generativelanguage.googleapis.com \
   --project="${PROJECT_ID}"
 echo "  ✓ APIs enabled — waiting 30s for propagation..."
 sleep 30
