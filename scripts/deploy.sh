@@ -20,7 +20,7 @@ adk deploy cloud_run \
   ./src/agent \
   -- \
   --service-account "$AGENT_SA" \
-  --set-env-vars "PROJECT_ID=${PROJECT_ID},SEARCH_DATASTORE_ID=${DATASTORE_ID},SEARCH_LOCATION=global" \
+  --set-env-vars "PROJECT_ID=${PROJECT_ID},SEARCH_DATASTORE_ID=${DATASTORE_ID},SEARCH_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION}" \
   --allow-unauthenticated
 echo "  ✓ Agent deployed"
 echo ""
