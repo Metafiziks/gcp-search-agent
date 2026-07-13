@@ -67,7 +67,7 @@ resource "google_project_iam_member" "deployer_cloudbuild" {
 # Workload Identity Federation — secretless GitHub Actions auth
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "${var.env_name}-github-pool"
-  display_name              = "GitHub Actions — ${var.env_name}"
+  display_name              = "GitHub Actions"
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
