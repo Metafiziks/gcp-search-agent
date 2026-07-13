@@ -16,14 +16,16 @@ echo "► Deploying agent with ADK..."
 adk deploy cloud_run \
   --project "$PROJECT_ID" \
   --region "$REGION" \
-  --service-name "search-agent" \
+  --service_name "${ENV_NAME}" \
+  ./src/agent \
+  -- \
   --service-account "$AGENT_SA" \
   --set-env-vars "PROJECT_ID=${PROJECT_ID},SEARCH_DATASTORE_ID=${DATASTORE_ID},SEARCH_LOCATION=global" \
-  ./src/agent
+  --allow-unauthenticated
 echo "  ✓ Agent deployed"
 echo ""
 
-SERVICE_URL=$(gcloud run services describe search-agent \
+SERVICE_URL=$(gcloud run services describe "${ENV_NAME}" \
   --region "$REGION" \
   --project "$PROJECT_ID" \
   --format="value(status.url)")
