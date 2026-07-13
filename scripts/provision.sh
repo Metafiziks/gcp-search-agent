@@ -10,6 +10,12 @@ echo ""
 echo "=== Provision: Infrastructure + Search Setup ==="
 echo ""
 
+# --- Bootstrap: enable CRM API first (required for all IAM operations) ---
+echo "► Bootstrapping Cloud Resource Manager API..."
+gcloud services enable cloudresourcemanager.googleapis.com --project="${PROJECT_ID}"
+echo "  ✓ cloudresourcemanager.googleapis.com enabled"
+echo ""
+
 # --- Terraform ---
 echo "► Provisioning infrastructure with Terraform..."
 terraform -chdir=terraform init -upgrade -input=false -reconfigure
