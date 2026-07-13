@@ -46,7 +46,7 @@ SEARCH_ENGINE_ID=$(terraform -chdir=terraform output -raw search_engine_id)
 
 # --- Upload documents ---
 echo "► Uploading documents from docs/ to GCS..."
-gsutil -m rsync -r docs/ "gs://${BUCKET}/docs/"
+gcloud storage rsync -r docs/ "gs://${BUCKET}/docs/" --project="${PROJECT_ID}"
 echo "  ✓ Documents uploaded"
 echo ""
 
