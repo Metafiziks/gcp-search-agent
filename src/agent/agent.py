@@ -41,7 +41,7 @@ def search_knowledge_base(query: str) -> str:
     serving_config = (
         f"projects/{project_id}/locations/{location}"
         f"/collections/default_collection/engines/{engine_id}"
-        f"/servingConfigs/default_config"
+        f"/servingConfigs/default_search"
     )
     try:
         request = discoveryengine.SearchRequest(
