@@ -156,17 +156,29 @@ Results are written to `eval_results.json`. Metrics scored:
 | Faithfulness | Gemini 2.5 Flash judge | ≥ 0.70 |
 | Answer Relevance | Gemini 2.5 Flash judge | ≥ 0.75 |
 
-## Comparison with Azure equivalent
+**Keeping evals in sync with your docs:**
 
-| | This template (GCP) | [azd-foundry-search-agent](https://github.com/Metafiziks/azd-foundry-search-agent) (Azure) |
-|---|---|---|
-| Provision | `terraform apply` | `azd provision` (Bicep) |
-| Deploy | `adk deploy cloud_run` | `azd deploy` (remote_build) |
-| LLM | Gemini 2.5 Flash (Agent Platform) | GPT-5 (Azure AI Foundry) |
-| Search | Vertex AI Search Enterprise | Azure AI Search |
-| Auth | Workload Identity Federation | Azure OIDC |
-| CI/CD | GitHub Actions | GitHub Actions |
-| **Teardown** | `bash scripts/teardown.sh` | `azd down` |
+When you change files in `docs/`, regenerate the eval cases before re-running:
+
+```bash
+PROJECT_ID=your-project-id python3 scripts/generate_eval_cases.py
+bash scripts/eval.sh
+```
+
+`generate_eval_cases.py` reads every `.txt` file under `docs/`, calls Gemini 2.5 Flash to generate 2 Q&A test cases per document, and writes `tests/eval_cases.json`. Running `bash scripts/provision.sh` does this automatically after each doc sync.
+
+## Comparison across cloud providers
+
+| | This template (GCP) | [AWS](https://github.com/Metafiziks/aws-bedrock-agent) | [Azure](https://github.com/Metafiziks/azd-foundry-search-agent) |
+|---|---|---|---|
+| Provision | `bash scripts/provision.sh` | `bash scripts/provision.sh` | `azd provision` |
+| LLM | Gemini 2.5 Flash (Vertex AI) | Amazon Nova Lite (Bedrock) | GPT-5 (Azure AI Foundry) |
+| Agent SDK | Google ADK + Cloud Run | Bedrock Agents (managed) | AI Foundry hosted agent |
+| RAG | Vertex AI Search Enterprise | Bedrock Knowledge Bases | Azure AI Search |
+| Vector store | Vertex AI Search (built-in) | OpenSearch Serverless | Azure AI Search (built-in) |
+| Auth | Workload Identity Federation | GitHub OIDC | Azure OIDC |
+| Eval judge | Gemini 2.5 Flash | Amazon Nova Pro | GPT-5 |
+| Teardown | `bash scripts/teardown.sh` | `bash scripts/teardown.sh` | `azd down` |
 
 ## Teardown
 
