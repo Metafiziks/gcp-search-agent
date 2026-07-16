@@ -45,6 +45,22 @@ fi
 echo "► Running evaluations against: ${SERVICE_URL}"
 echo ""
 
+# Warm up the Cloud Run service before timed evaluation.
+# Cloud Run cold starts can add 20-30s to the first request — this prevents
+# that latency from inflating the p95 score.
+echo "► Warming up agent (2 requests to prime the container)..."
+for _ in 1 2; do
+  SESSION_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
+  curl -sf -X POST "${SERVICE_URL}/apps/agent/users/warmup/sessions" \
+    -H 'Content-Type: application/json' -d '{}' > /dev/null 2>&1 || true
+  curl -sf -X POST "${SERVICE_URL}/run" \
+    -H 'Content-Type: application/json' \
+    -d "{\"appName\":\"agent\",\"userId\":\"warmup\",\"sessionId\":\"${SESSION_ID}\",\"newMessage\":{\"role\":\"user\",\"parts\":[{\"text\":\"ping\"}]}}" \
+    > /dev/null 2>&1 || true
+done
+echo "  ✓ Warm-up complete"
+echo ""
+
 SERVICE_URL="${SERVICE_URL}" \
 PROJECT_ID="${PROJECT_ID}" \
 REGION="${REGION}" \

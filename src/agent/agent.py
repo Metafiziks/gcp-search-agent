@@ -57,10 +57,11 @@ def search_knowledge_base(query: str) -> str:
             content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
                 snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
                     return_snippet=True,
-                    max_snippet_count=2,
+                    max_snippet_count=3,
                 ),
                 extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
-                    max_extractive_answer_count=1,
+                    max_extractive_answer_count=3,
+                    max_extractive_segment_count=3,
                 ),
             ),
         )
@@ -75,9 +76,17 @@ def search_knowledge_base(query: str) -> str:
 
         content = ""
         if "extractive_answers" in data and data["extractive_answers"]:
-            content = data["extractive_answers"][0].get("content", "")
+            content = " ".join(
+                a.get("content", "") for a in data["extractive_answers"] if a.get("content")
+            )
+        if not content and "extractive_segments" in data and data["extractive_segments"]:
+            content = " ".join(
+                s.get("content", "") for s in data["extractive_segments"] if s.get("content")
+            )
         if not content and "snippets" in data and data["snippets"]:
-            content = data["snippets"][0].get("snippet", "")
+            content = " ".join(
+                s.get("snippet", "") for s in data["snippets"] if s.get("snippet")
+            )
 
         title = data.get("title", "") or result.document.id
         link = data.get("link", "")

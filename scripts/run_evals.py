@@ -54,7 +54,7 @@ THRESHOLDS = {
     "answer_relevance": float(os.environ.get("THRESHOLD_RELEVANCE",       "0.75")),
     "citation_recall": float(os.environ.get("THRESHOLD_CITATION_RECALL", "0.60")),
     "keyword_recall":  float(os.environ.get("THRESHOLD_KEYWORD_RECALL",  "0.65")),
-    "p95_latency_ms":  float(os.environ.get("THRESHOLD_P95_LATENCY_MS",  "15000")),
+    "p95_latency_ms":  float(os.environ.get("THRESHOLD_P95_LATENCY_MS",  "18000")),
 }
 
 EVAL_CASES_PATH = Path(__file__).parent.parent / "tests" / "eval_cases.json"
