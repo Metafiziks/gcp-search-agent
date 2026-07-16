@@ -40,7 +40,7 @@ if [[ ! -d "${VENV_DIR}" ]]; then
   echo "► Creating Python venv..."
   python3 -m venv "${VENV_DIR}"
 fi
-"${VENV_DIR}/bin/pip" install requests google-cloud-aiplatform -q
+"${VENV_DIR}/bin/pip" install requests google-genai -q
 
 echo "► Running evaluations against: ${SERVICE_URL}"
 echo ""
