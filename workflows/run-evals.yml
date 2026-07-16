@@ -43,7 +43,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install requests google-cloud-aiplatform -q
+        run: pip install requests google-genai -q
 
       - name: Run evaluations
         env:

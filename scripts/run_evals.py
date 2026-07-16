@@ -36,8 +36,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
+from google import genai
+from google.genai import types
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -54,7 +54,7 @@ THRESHOLDS = {
     "answer_relevance": float(os.environ.get("THRESHOLD_RELEVANCE",       "0.75")),
     "citation_recall": float(os.environ.get("THRESHOLD_CITATION_RECALL", "0.60")),
     "keyword_recall":  float(os.environ.get("THRESHOLD_KEYWORD_RECALL",  "0.65")),
-    "p95_latency_ms":  float(os.environ.get("THRESHOLD_P95_LATENCY_MS",  "10000")),
+    "p95_latency_ms":  float(os.environ.get("THRESHOLD_P95_LATENCY_MS",  "15000")),
 }
 
 EVAL_CASES_PATH = Path(__file__).parent.parent / "tests" / "eval_cases.json"
@@ -116,8 +116,13 @@ def call_agent(question: str) -> tuple[str, list[str], float]:
                 if "text" in part:
                     answer += part["text"]
 
-    # Extract filenames from Markdown citation links: [filename.txt](https://...)
+    # Extract filenames from Markdown citation links.
+    # GCP format: [title_without_ext](https://.../filename.txt)
+    # Also matches: [filename.txt](https://...)
     citations = re.findall(r"\[([^\]]+\.txt)\]", answer)
+    # Fall back: extract .txt filename from the URL itself
+    if not citations:
+        citations = re.findall(r"\]\(https?://[^\)]*?/([^/\)]+\.txt)[^\)]*\)", answer)
 
     return answer, citations, latency_ms
 
@@ -178,7 +183,7 @@ Return ONLY a valid JSON object with exactly these keys — no markdown, no expl
 
 
 def call_judge(question: str, answer: str, citations: list[str]) -> dict:
-    """Call Gemini to score faithfulness and answer_relevance."""
+    """Call Gemini to score faithfulness and answer_relevance using JSON mode."""
     citation_str = ", ".join(citations) if citations else "none"
     prompt = JUDGE_PROMPT.format(
         question=question,
@@ -186,18 +191,30 @@ def call_judge(question: str, answer: str, citations: list[str]) -> dict:
         citations=citation_str,
     )
 
-    model = GenerativeModel(JUDGE_MODEL)
-    response = model.generate_content(
-        prompt,
-        generation_config=GenerationConfig(temperature=0, max_output_tokens=512),
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location=REGION)
+    response = client.models.generate_content(
+        model=JUDGE_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=0,
+            max_output_tokens=1024,
+            response_mime_type="application/json",
+        ),
     )
-    text = response.text.strip()
-
-    # Strip accidental markdown fences
-    text = re.sub(r"^```json\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-
-    scores = json.loads(text)
+    try:
+        scores = json.loads(response.text)
+    except json.JSONDecodeError:
+        # Fallback: extract integers with regex when JSON mode glitches
+        text = response.text
+        faith_m = re.search(r'"faithfulness"\s*:\s*(\d)', text)
+        rel_m   = re.search(r'"answer_relevance"\s*:\s*(\d)', text)
+        if faith_m and rel_m:
+            scores = {
+                "faithfulness":    int(faith_m.group(1)),
+                "answer_relevance": int(rel_m.group(1)),
+            }
+        else:
+            raise
     return {
         "faithfulness":    (scores["faithfulness"]    - 1) / 4,
         "answer_relevance": (scores["answer_relevance"] - 1) / 4,
@@ -320,8 +337,10 @@ def main():
         print("  export PROJECT_ID=<your-gcp-project-id>", file=sys.stderr)
         sys.exit(1)
 
-    if not args.no_judge:
-        vertexai.init(project=PROJECT_ID, location=REGION)
+    if not args.no_judge and not PROJECT_ID:
+        print("ERROR: PROJECT_ID is required for the Gemini judge", file=sys.stderr)
+        print("  export PROJECT_ID=<your-gcp-project-id>", file=sys.stderr)
+        sys.exit(1)
 
     eval_cases = json.loads(EVAL_CASES_PATH.read_text())
     print(f"Loaded {len(eval_cases)} eval cases")

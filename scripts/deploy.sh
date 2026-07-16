@@ -70,7 +70,7 @@ VENV_DIR="/tmp/gcp-eval-venv"
 if [[ ! -d "${VENV_DIR}" ]]; then
   python3 -m venv "${VENV_DIR}"
 fi
-"${VENV_DIR}/bin/pip" install requests google-cloud-aiplatform -q
+"${VENV_DIR}/bin/pip" install requests google-genai -q
 
 SERVICE_URL="${SERVICE_URL}" \
 PROJECT_ID="${PROJECT_ID}" \
