@@ -3,6 +3,12 @@ name: deploy
 on:
   push:
     branches: [main]
+    paths:
+      - "docs/**"
+      - "src/**"
+      - "terraform/**"
+      - "scripts/provision.sh"
+      - "scripts/deploy.sh"
   workflow_dispatch:
 
 permissions:
@@ -14,13 +20,15 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      ENV_NAME:   ${{ vars.ENV_NAME || 'search-agent' }}
-      REGION:     ${{ vars.GCP_REGION || 'us-central1' }}
+      PROJECT_ID:  ${{ vars.PROJECT_ID }}
+      ENV_NAME:    ${{ vars.ENV_NAME || 'search-agent' }}
+      REGION:      ${{ vars.REGION || 'us-central1' }}
       GITHUB_REPO: ${{ github.repository }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # needed to detect changed paths
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -30,8 +38,6 @@ jobs:
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
-        with:
-          install_components: gsutil
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -39,13 +45,41 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - name: Install ADK
-        run: pip install google-adk
+      - name: Install ADK + dependencies
+        run: pip install google-adk google-genai google-cloud-discoveryengine -q
 
-      - name: Provision infrastructure + index documents
-        run: bash scripts/provision.sh
+      - name: Sync docs to GCS + re-index (docs changes)
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'docs/')
+        env:
+          SEARCH_DATASTORE_ID: ${{ vars.SEARCH_DATASTORE_ID }}
+          DOCS_BUCKET: ${{ vars.DOCS_BUCKET }}
+        run: |
+          gcloud storage rsync -r docs/ "gs://${DOCS_BUCKET}/docs/" --project="${PROJECT_ID}"
+          python3 scripts/import_docs.py "$PROJECT_ID" "$SEARCH_DATASTORE_ID" "$DOCS_BUCKET"
 
-      - name: Deploy agent
+      - name: Re-generate eval cases from updated docs
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'docs/')
+        run: |
+          PROJECT_ID="${PROJECT_ID}" REGION="${REGION}" \
+            python3 scripts/generate_eval_cases.py
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tests/eval_cases.json
+          git diff --cached --quiet || git commit -m "chore: regenerate eval cases from updated docs [skip ci]" && git push
+
+      - name: Deploy agent to Cloud Run (agent/infra changes)
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'src/') ||
+          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'terraform/') ||
+          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'scripts/deploy.sh') ||
+          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'scripts/provision.sh')
+        env:
+          SEARCH_DATASTORE_ID: ${{ vars.SEARCH_DATASTORE_ID }}
         run: bash scripts/deploy.sh

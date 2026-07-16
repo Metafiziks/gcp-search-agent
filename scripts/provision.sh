@@ -74,6 +74,13 @@ pip install -q google-cloud-discoveryengine
 python3 scripts/import_docs.py "$PROJECT_ID" "$DATASTORE_ID" "$BUCKET"
 echo ""
 
+# --- Generate eval cases from docs ---
+echo "► Generating eval cases from docs/..."
+pip install -q google-genai
+PROJECT_ID="${PROJECT_ID}" REGION="${REGION}" \
+  python3 scripts/generate_eval_cases.py
+echo ""
+
 echo "=== Provision Complete ==="
 echo "  Bucket       : gs://${BUCKET}"
 echo "  Data store   : ${DATASTORE_ID}"
