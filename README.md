@@ -109,18 +109,52 @@ Any folder structure is preserved as the GCS path and appears in citation links.
 
 ## GitHub Actions CI/CD
 
-After provisioning, set these repo variables:
+`deploy.sh` sets all required repo variables automatically if `gh` is authenticated. To set them manually:
 
 ```bash
-WIF_PROVIDER=$(terraform -chdir=terraform output -raw wif_provider)
-WIF_SERVICE_ACCOUNT=$(terraform -chdir=terraform output -raw deployer_service_account)
-
-gh variable set WIF_PROVIDER --body "$WIF_PROVIDER"
-gh variable set WIF_SERVICE_ACCOUNT --body "$WIF_SERVICE_ACCOUNT"
-gh variable set GCP_PROJECT_ID --body "$PROJECT_ID"
+gh variable set WIF_PROVIDER        --body "$(terraform -chdir=terraform output -raw wif_provider)"
+gh variable set WIF_SERVICE_ACCOUNT --body "$(terraform -chdir=terraform output -raw deployer_service_account)"
+gh variable set PROJECT_ID          --body "$PROJECT_ID"
+gh variable set SERVICE_URL         --body "$(gcloud run services describe search-agent --region us-central1 --project $PROJECT_ID --format='value(status.url)')"
 ```
 
-Then every push to `main` automatically redeploys the agent via `.github/workflows/deploy.yml`.
+Then activate the workflows by copying them into `.github/workflows/`:
+
+```bash
+cp workflows/*.yml .github/workflows/
+git add .github/workflows/ && git commit -m "Activate CI workflows" && git push
+```
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `deploy.yml` | Push to `src/` | Rebuilds and redeploys the Cloud Run agent |
+| `run-evals.yml` | Push to `src/` or `tests/`, weekly | Runs the 12-case eval suite via Gemini judge; fails CI if metrics drop below threshold |
+
+No GCP credentials stored as secrets — all auth via Workload Identity Federation.
+
+## Running Evaluations Locally
+
+After deploying:
+
+```bash
+bash scripts/eval.sh
+```
+
+`eval.sh` resolves the Cloud Run service URL from `gcloud` automatically. To skip the Gemini judge:
+
+```bash
+bash scripts/eval.sh --no-judge
+```
+
+Results are written to `eval_results.json`. Metrics scored:
+
+| Metric | Method | Pass threshold |
+|---|---|---|
+| Keyword Recall | Deterministic | ≥ 0.65 |
+| Citation Recall | Deterministic | ≥ 0.60 |
+| p95 Latency | Deterministic | ≤ 10000ms |
+| Faithfulness | Gemini 2.5 Flash judge | ≥ 0.70 |
+| Answer Relevance | Gemini 2.5 Flash judge | ≥ 0.75 |
 
 ## Comparison with Azure equivalent
 
