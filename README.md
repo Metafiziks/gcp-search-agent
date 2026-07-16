@@ -1,6 +1,6 @@
 # gcp-search-agent
 
-A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links.
+A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links. Includes a built-in **automated evaluation suite** that scores every deployment on faithfulness, answer relevance, citation accuracy, and latency using Gemini 2.5 Flash as an LLM judge.
 
 ```
 $ SESSION=$(curl -s -X POST https://<your-service>/apps/agent/users/u1/sessions \
