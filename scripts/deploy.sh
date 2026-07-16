@@ -39,3 +39,43 @@ echo "  curl -X POST ${SERVICE_URL}/run \\"
 echo "    -H 'Content-Type: application/json' \\"
 echo "    -d '{\"message\": \"What documents are available?\"}'"
 echo ""
+
+# Set GitHub Actions repo variables
+if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+  echo "► Setting GitHub Actions repo variables..."
+  WIF_PROVIDER=$(terraform -chdir=terraform output -raw wif_provider)
+  WIF_SA=$(terraform -chdir=terraform output -raw deployer_service_account)
+  gh variable set WIF_PROVIDER        --body "${WIF_PROVIDER}"
+  gh variable set WIF_SERVICE_ACCOUNT --body "${WIF_SA}"
+  gh variable set PROJECT_ID          --body "${PROJECT_ID}"
+  gh variable set SERVICE_URL         --body "${SERVICE_URL}"
+  echo "  ✓ Repo variables set"
+  echo ""
+  echo "► To activate GitHub Actions workflows, copy them to .github/workflows/:"
+  echo "  cp workflows/*.yml .github/workflows/"
+  echo "  git add .github/workflows/ && git commit -m 'Activate CI workflows' && git push"
+else
+  echo "► Skipping GitHub Actions variable setup (gh CLI not authenticated)"
+  echo "  Run manually after deploy:"
+  echo "    gh variable set SERVICE_URL --body '${SERVICE_URL}'"
+  echo "    gh variable set PROJECT_ID  --body '${PROJECT_ID}'"
+fi
+echo ""
+
+echo "► Running automated evaluations..."
+echo ""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="/tmp/gcp-eval-venv"
+
+if [[ ! -d "${VENV_DIR}" ]]; then
+  python3 -m venv "${VENV_DIR}"
+fi
+"${VENV_DIR}/bin/pip" install requests google-cloud-aiplatform -q
+
+SERVICE_URL="${SERVICE_URL}" \
+PROJECT_ID="${PROJECT_ID}" \
+REGION="${REGION}" \
+"${VENV_DIR}/bin/python3" "${SCRIPT_DIR}/run_evals.py" \
+  --output "${SCRIPT_DIR}/../eval_results.json"
+echo ""
+
