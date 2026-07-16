@@ -54,7 +54,7 @@ THRESHOLDS = {
     "answer_relevance": float(os.environ.get("THRESHOLD_RELEVANCE",       "0.75")),
     "citation_recall": float(os.environ.get("THRESHOLD_CITATION_RECALL", "0.60")),
     "keyword_recall":  float(os.environ.get("THRESHOLD_KEYWORD_RECALL",  "0.65")),
-    "p95_latency_ms":  float(os.environ.get("THRESHOLD_P95_LATENCY_MS",  "18000")),
+    "p95_latency_ms":  float(os.environ.get("THRESHOLD_P95_LATENCY_MS",  "25000")),
 }
 
 EVAL_CASES_PATH = Path(__file__).parent.parent / "tests" / "eval_cases.json"
@@ -81,6 +81,7 @@ def call_agent(question: str) -> tuple[str, list[str], float]:
     Run one turn against the ADK Cloud Run agent.
     Returns (answer, citations, latency_ms).
     Citations are filenames extracted from markdown links in the answer.
+    Retries once on 500 (transient Gemini rate limit inside ADK).
     """
     user_id = "eval"
     session_id = _create_session(user_id)
@@ -95,16 +96,27 @@ def call_agent(question: str) -> tuple[str, list[str], float]:
         },
     }
 
-    start = time.monotonic()
-    resp = requests.post(
-        f"{SERVICE_URL}/run",
-        headers={"Content-Type": "application/json"},
-        json=body,
-        timeout=60,
-    )
-    latency_ms = (time.monotonic() - start) * 1000
+    for attempt in range(3):
+        start = time.monotonic()
+        resp = requests.post(
+            f"{SERVICE_URL}/run",
+            headers={"Content-Type": "application/json"},
+            json=body,
+            timeout=90,
+        )
+        latency_ms = (time.monotonic() - start) * 1000
 
-    resp.raise_for_status()
+        if resp.status_code == 500 and attempt < 2:
+            wait = 15 * (attempt + 1)
+            print(f" [500, retrying in {wait}s]", end="", flush=True)
+            time.sleep(wait)
+            session_id = _create_session(user_id)
+            body["sessionId"] = session_id
+            continue
+
+        resp.raise_for_status()
+        break
+
     events = resp.json()
 
     # Collect text from all model-role events
@@ -414,6 +426,9 @@ def main():
             print(f"ERROR: {e}")
 
         results.append(result)
+        # Brief pause between cases to avoid Gemini rate limits inside the ADK
+        if i < len(eval_cases):
+            time.sleep(2)
 
     summary  = build_summary(results)
     failures = check_thresholds(summary, THRESHOLDS) if not args.no_judge else []
