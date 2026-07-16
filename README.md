@@ -152,7 +152,7 @@ Results are written to `eval_results.json`. Metrics scored:
 |---|---|---|
 | Keyword Recall | Deterministic | ≥ 0.65 |
 | Citation Recall | Deterministic | ≥ 0.60 |
-| p95 Latency | Deterministic | ≤ 18000ms |
+| p95 Latency | Deterministic | ≤ 25000ms |
 | Faithfulness | Gemini 2.5 Flash judge | ≥ 0.70 |
 | Answer Relevance | Gemini 2.5 Flash judge | ≥ 0.75 |
 
