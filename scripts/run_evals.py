@@ -191,16 +191,28 @@ def call_judge(question: str, answer: str, citations: list[str]) -> dict:
         citations=citation_str,
     )
 
-    client = genai.Client(vertexai=True, project=PROJECT_ID, location=REGION)
-    response = client.models.generate_content(
-        model=JUDGE_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0,
-            max_output_tokens=1024,
-            response_mime_type="application/json",
-        ),
-    )
+    for attempt in range(4):
+        try:
+            client = genai.Client(vertexai=True, project=PROJECT_ID, location=REGION)
+            response = client.models.generate_content(
+                model=JUDGE_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0,
+                    max_output_tokens=1024,
+                    response_mime_type="application/json",
+                ),
+            )
+            break
+        except Exception as exc:
+            if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
+                wait = 10 * (2 ** attempt)
+                print(f" [rate limited, retrying in {wait}s]", end="", flush=True)
+                time.sleep(wait)
+                if attempt == 3:
+                    raise
+            else:
+                raise
     try:
         scores = json.loads(response.text)
     except json.JSONDecodeError:
