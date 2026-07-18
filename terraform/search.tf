@@ -10,6 +10,11 @@ resource "google_discovery_engine_data_store" "docs" {
   create_advanced_site_search = false
 
   depends_on = [google_project_service.apis]
+
+  # GCP auto-populates document_processing_config after creation; ignore drift
+  lifecycle {
+    ignore_changes = [document_processing_config]
+  }
 }
 
 # Vertex AI Search engine with LLM add-on (enables extractive answers + summaries)

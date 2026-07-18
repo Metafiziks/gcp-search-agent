@@ -1,8 +1,13 @@
 import logging
 import math
 import os
+import sys
 import time
 import uuid
+
+# Ensure sibling modules (bigquery_sink, iforest_scorer) are importable
+# when ADK deploys this file into /app/agents/agent/ inside Cloud Run
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from google.adk.agents import Agent
 from google.cloud import discoveryengine_v1beta as discoveryengine

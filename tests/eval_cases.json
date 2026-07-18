@@ -1,125 +1,74 @@
 [
   {
-    "id": "hydraulic-leak-response",
+    "id": "daily-conveyor-inspection",
     "category": "maintenance",
-    "question": "What should I do if I find a hydraulic leak on the press?",
+    "question": "What are the daily inspection requirements for the production line conveyors?",
     "expected_keywords": [
-      "maintenance",
+      "unusual noise",
+      "belt damage",
+      "loose fasteners",
+      "foreign objects",
+      "visible guarding issues",
+      "reported to maintenance"
+    ],
+    "expected_sources": [
+      "conveyor_pm_manual.txt"
+    ]
+  },
+  {
+    "id": "monthly-conveyor-pm-tasks",
+    "category": "maintenance",
+    "question": "What tasks are included in the monthly preventive maintenance for the conveyors?",
+    "expected_keywords": [
+      "lubrication of approved bearings",
+      "inspection of gearbox oil level",
+      "review of belt wear",
+      "verification of guard condition",
+      "inspection of electrical conduit damage"
+    ],
+    "expected_sources": [
+      "conveyor_pm_manual.txt"
+    ]
+  },
+  {
+    "id": "hydraulic-press-low-pressure-inspection",
+    "category": "maintenance",
+    "question": "What should I inspect if a hydraulic press cannot reach its target pressure?",
+    "expected_keywords": [
+      "hydraulic fluid level",
+      "pump condition",
+      "pressure relief valve setting",
+      "leaks",
+      "clogged filters",
+      "worn seals"
+    ],
+    "expected_sources": [
+      "hydraulic_press_troubleshooting.txt"
+    ]
+  },
+  {
+    "id": "hydraulic-press-oil-leak-response",
+    "category": "maintenance",
+    "question": "What is the correct response if I discover an oil leak under or around a hydraulic press?",
+    "expected_keywords": [
+      "stop the machine",
+      "notify maintenance",
+      "Do not operate",
       "absorbent pads",
-      "spill",
-      "stop"
+      "spill response procedures"
     ],
     "expected_sources": [
       "hydraulic_press_troubleshooting.txt"
     ]
   },
   {
-    "id": "press-restart-after-maintenance",
-    "category": "maintenance",
-    "question": "What must be checked before the hydraulic press is returned to production after maintenance?",
-    "expected_keywords": [
-      "guard placement",
-      "pressure settings",
-      "leak-free",
-      "emergency stop",
-      "dry cycle"
-    ],
-    "expected_sources": [
-      "hydraulic_press_troubleshooting.txt"
-    ]
-  },
-  {
-    "id": "hydraulic-slow-cycle-causes",
-    "category": "maintenance",
-    "question": "What could cause slow cycle time on the hydraulic press?",
-    "expected_keywords": [
-      "low fluid temperature",
-      "restricted filters",
-      "worn pump",
-      "air in the hydraulic system"
-    ],
-    "expected_sources": [
-      "hydraulic_press_troubleshooting.txt"
-    ]
-  },
-  {
-    "id": "conveyor-belt-drift",
-    "category": "maintenance",
-    "question": "How should belt tracking be adjusted if the belt drifts to one side?",
-    "expected_keywords": [
-      "debris buildup",
-      "worn rollers",
-      "uneven tension",
-      "small increments"
-    ],
-    "expected_sources": [
-      "conveyor_pm_manual.txt"
-    ]
-  },
-  {
-    "id": "conveyor-emergency-stop-failure",
-    "category": "maintenance",
-    "question": "What should happen if a conveyor emergency stop device fails during weekly testing?",
-    "expected_keywords": [
-      "out of service",
-      "repaired",
-      "immediately",
-      "stop"
-    ],
-    "expected_sources": [
-      "conveyor_pm_manual.txt"
-    ]
-  },
-  {
-    "id": "conveyor-monthly-pm-tasks",
-    "category": "maintenance",
-    "question": "What are the monthly preventive maintenance tasks for conveyors?",
-    "expected_keywords": [
-      "lubricate",
-      "gearbox",
-      "belt",
-      "guards"
-    ],
-    "expected_sources": [
-      "conveyor_pm_manual.txt"
-    ]
-  },
-  {
-    "id": "loto-when-required",
-    "category": "safety",
-    "question": "When is lockout tagout required on production equipment?",
-    "expected_keywords": [
-      "service",
-      "maintenance",
-      "guard",
-      "startup"
-    ],
-    "expected_sources": [
-      "lockout_tagout_procedure.txt"
-    ]
-  },
-  {
-    "id": "loto-supervisor-lock-removal",
-    "category": "safety",
-    "question": "Can a supervisor remove another employee's lock if that employee is unavailable?",
-    "expected_keywords": [
-      "formal lock removal exception",
-      "Plant Safety",
-      "not on site",
-      "document"
-    ],
-    "expected_sources": [
-      "lockout_tagout_procedure.txt"
-    ]
-  },
-  {
-    "id": "critical-defect-classification",
+    "id": "critical-defect-action",
     "category": "quality",
-    "question": "What is a critical defect and what action must be taken when one is found?",
+    "question": "If I discover a finished good with an exposed sharp edge, what is the required action according to the defect classification standard?",
     "expected_keywords": [
+      "Critical Defect",
       "safety risk",
-      "regulatory",
-      "hold",
+      "immediate hold",
       "Quality Assurance escalation"
     ],
     "expected_sources": [
@@ -129,40 +78,74 @@
   {
     "id": "repeated-defects-containment",
     "category": "quality",
-    "question": "What should a supervisor do when repeated defects are found in a production lot?",
+    "question": "What procedure should a supervisor follow if repeated defects are found in a lot of finished goods?",
     "expected_keywords": [
+      "repeated defects",
       "stop shipment",
       "notify Quality Assurance",
-      "last known good",
-      "containment"
+      "last known good unit",
+      "begin containment"
     ],
     "expected_sources": [
       "finished_goods_defect_standard.txt"
     ]
   },
   {
-    "id": "incoming-material-rejection-criteria",
+    "id": "damaged-material-procedure",
     "category": "quality",
-    "question": "What are the criteria for rejecting incoming materials from a supplier?",
+    "question": "If I find incoming materials that are damaged or mislabeled, what is the correct procedure?",
     "expected_keywords": [
-      "damage",
-      "contamination",
-      "documentation",
-      "unapproved"
+      "rejected materials",
+      "quarantine area",
+      "labeled with a hold tag",
+      "not be used in production",
+      "Quality Assurance releases it"
     ],
     "expected_sources": [
       "incoming_material_inspection_standard.txt"
     ]
   },
   {
-    "id": "line-clearance-required-checks",
+    "id": "uninspected-material-use",
     "category": "quality",
-    "question": "What verification steps are required during a production line changeover before a new run starts?",
+    "question": "My production line is about to stop because we're waiting for materials. Can I use materials that haven't been inspected yet to keep it running?",
     "expected_keywords": [
-      "previous",
-      "labels",
-      "remove",
-      "packaging"
+      "not use uninspected",
+      "quarantined materials",
+      "production is at risk",
+      "escalate to Quality Assurance",
+      "Planning"
+    ],
+    "expected_sources": [
+      "incoming_material_inspection_standard.txt"
+    ]
+  },
+  {
+    "id": "when-line-clearance-required",
+    "category": "quality",
+    "question": "Under what circumstances is a line clearance required according to the Production Line Clearance Standard?",
+    "expected_keywords": [
+      "new product",
+      "new lot",
+      "new work order",
+      "packaging configuration",
+      "label set",
+      "customer-specific build"
+    ],
+    "expected_sources": [
+      "line_clearance_standard.txt"
+    ]
+  },
+  {
+    "id": "common-line-clearance-failures",
+    "category": "quality",
+    "question": "What are some common line clearance failures listed in the standard that operators should be aware of?",
+    "expected_keywords": [
+      "Old labels left",
+      "Previous lot paperwork mixed",
+      "Incorrect carton type staged",
+      "Product from prior run left",
+      "Unapproved fixture used"
     ],
     "expected_sources": [
       "line_clearance_standard.txt"

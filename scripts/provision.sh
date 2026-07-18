@@ -68,17 +68,23 @@ gcloud storage rsync -r docs/ "gs://${BUCKET}/docs/" --project="${PROJECT_ID}"
 echo "  ✓ Documents uploaded"
 echo ""
 
+# --- Set up Python venv (avoid Homebrew externally-managed-environment error) ---
+GCP_VENV="/tmp/gcp-agent-venv"
+if [ ! -f "${GCP_VENV}/bin/python3" ]; then
+  python3 -m venv "${GCP_VENV}" --clear
+fi
+
 # --- Import into Vertex AI Search ---
 echo "► Importing documents into Vertex AI Search..."
-pip install -q google-cloud-discoveryengine
-python3 scripts/import_docs.py "$PROJECT_ID" "$DATASTORE_ID" "$BUCKET"
+"${GCP_VENV}/bin/pip" install -q google-cloud-discoveryengine
+"${GCP_VENV}/bin/python3" scripts/import_docs.py "$PROJECT_ID" "$DATASTORE_ID" "$BUCKET"
 echo ""
 
 # --- Generate eval cases from docs ---
 echo "► Generating eval cases from docs/..."
-pip install -q google-genai
+"${GCP_VENV}/bin/pip" install -q google-genai
 PROJECT_ID="${PROJECT_ID}" REGION="${REGION}" \
-  python3 scripts/generate_eval_cases.py
+  "${GCP_VENV}/bin/python3" scripts/generate_eval_cases.py
 echo ""
 
 echo "=== Provision Complete ==="

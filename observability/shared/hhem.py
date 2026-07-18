@@ -25,6 +25,7 @@ def _pipeline():
     return pipeline(
         "text-classification",
         model=MODEL_NAME,
+        trust_remote_code=True,
         # Use CPU by default; set device=0 for GPU
     )
 

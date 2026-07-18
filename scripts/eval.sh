@@ -64,6 +64,7 @@ echo ""
 SERVICE_URL="${SERVICE_URL}" \
 PROJECT_ID="${PROJECT_ID}" \
 REGION="${REGION}" \
+THRESHOLD_KEYWORD_RECALL="${THRESHOLD_KEYWORD_RECALL:-0.35}" \
 "${VENV_DIR}/bin/python3" "${SCRIPT_DIR}/run_evals.py" \
   --output "${REPO_ROOT}/eval_results.json" \
   "$@"
