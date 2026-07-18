@@ -132,7 +132,123 @@ git add .github/workflows/ && git commit -m "Activate CI workflows" && git push
 
 No GCP credentials stored as secrets — all auth via Workload Identity Federation.
 
-## Running Evaluations Locally
+## ML Observability
+
+The template ships with a three-layer observability stack that goes beyond threshold alerts to detect subtle drift before it becomes visible to users.
+
+### What runs where
+
+| Component | Where | When |
+|-----------|-------|------|
+| **Vertex AI Ranking API** | Agent (Cloud Run) | Every request — re-ranks retrieved chunks for better relevance |
+| **IsolationForest scorer** | Agent (Cloud Run) | Every request — flags anomalous retrieval patterns |
+| **BigQuery telemetry** | Agent (Cloud Run) | Every request — logs retrieval features as structured rows |
+| **HHEM hallucination scorer** | Eval runner | Every eval run — scores answer consistency |
+| **IForest baseline training** | Deploy time | Once — bootstraps model from eval telemetry |
+| **IForest retraining** | Weekly (GitHub Actions) | Adapts model to production traffic distribution |
+
+### How it works
+
+**Runtime (every request):**
+```
+User query
+    ↓
+Vertex AI Search — retrieves top-8 chunks, records relevance scores
+    ↓
+Vertex AI Ranking API — re-ranks chunks by semantic relevance (semantic-ranker-512)
+    ↓
+IsolationForest — scores the 6-feature retrieval vector for anomalies
+    ↓
+BigQuery — logs telemetry row (fire-and-forget daemon thread, non-blocking)
+    ↓
+Gemini — generates answer from re-ranked top-5 chunks
+```
+
+**Eval time (each eval run):**
+```
+Eval runner asks question → records answer + latency
+    ↓
+HHEM (vectara/hallucination_evaluation_model) — scores hallucination probability
+    ↓
+BigQuery — logs answer-quality row (hhem_score, answer_length, citation_count, latency_ms)
+```
+
+**Weekly (GitHub Actions cron):**
+```
+Pull last 30 days of BigQuery telemetry
+    ↓
+Retrain IsolationForest on production distribution
+    ↓
+Upload new model.pkl to GCS
+    ↓
+Agent picks up new model on next cold start
+```
+
+### Detecting drift with BigQuery
+
+Because every request is logged to BigQuery, you can query across time to detect degradation:
+
+```sql
+-- Faithfulness trend (7-day rolling)
+SELECT
+  DATE(timestamp) AS day,
+  AVG(hhem_score) AS avg_hallucination_prob,
+  COUNT(*) AS requests
+FROM `project.agent_observability.telemetry`
+WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+  AND source = 'eval'
+GROUP BY day
+ORDER BY day;
+
+-- Anomaly rate over time
+SELECT
+  DATE(timestamp) AS day,
+  COUNTIF(is_anomaly) / COUNT(*) AS anomaly_rate,
+  AVG(retrieval_score_mean) AS avg_retrieval_score
+FROM `project.agent_observability.telemetry`
+WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+  AND source = 'runtime'
+GROUP BY day
+ORDER BY day;
+```
+
+### Baseline training
+
+At deploy time, `deploy.sh` runs the eval suite 5× to collect 60 baseline "healthy" rows in BigQuery, then trains the initial IsolationForest:
+
+```bash
+PROJECT_ID=your-project \
+GCS_MODEL_PATH=gs://your-bucket/models/iforest.pkl \
+python3 observability/train_baseline.py
+```
+
+The agent loads the model from GCS at startup via the `GCS_MODEL_PATH` env var. If the model isn't present yet (first deploy), anomaly scoring is disabled gracefully — the agent still works, it just logs `anomaly_score=0`.
+
+### Manual retraining
+
+```bash
+PROJECT_ID=your-project \
+GCS_MODEL_PATH=gs://your-bucket/models/iforest.pkl \
+RETRAIN_LOOKBACK_DAYS=30 \
+python3 observability/retrain.py
+```
+
+Or trigger the workflow manually from the Actions tab.
+
+### Telemetry schema
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `retrieval_score_mean` | FLOAT64 | Runtime | Mean chunk relevance from Vertex AI Search |
+| `retrieval_score_entropy` | FLOAT64 | Runtime | Score distribution entropy (low = skewed toward one chunk) |
+| `reranker_score_mean` | FLOAT64 | Runtime | Mean semantic-ranker-512 score |
+| `chunk_count` | INT64 | Runtime | Number of chunks retrieved |
+| `search_latency_ms` | FLOAT64 | Runtime | Vertex AI Search wall-clock time |
+| `anomaly_score` | FLOAT64 | Runtime | IForest decision function (negative = anomalous) |
+| `hhem_score` | FLOAT64 | Eval | Hallucination probability [0=consistent, 1=hallucinated] |
+| `latency_ms` | FLOAT64 | Eval | End-to-end request latency |
+
+
 
 After deploying:
 

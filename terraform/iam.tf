@@ -22,6 +22,19 @@ resource "google_storage_bucket_iam_member" "agent_gcs_read" {
   member = "serviceAccount:${google_service_account.agent.email}"
 }
 
+# BigQuery: agent writes telemetry rows
+resource "google_bigquery_dataset_iam_member" "agent_bq_writer" {
+  dataset_id = google_bigquery_dataset.observability.dataset_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.agent.email}"
+}
+
+resource "google_project_iam_member" "agent_bq_jobuser" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.agent.email}"
+}
+
 # Service account for CI/CD deployments
 resource "google_service_account" "deployer" {
   account_id   = "${var.env_name}-deployer"

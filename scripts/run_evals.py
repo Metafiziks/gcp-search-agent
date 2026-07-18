@@ -40,6 +40,23 @@ from google import genai
 from google.genai import types
 
 # ---------------------------------------------------------------------------
+# Optional observability imports (graceful fallback if not installed)
+# ---------------------------------------------------------------------------
+
+try:
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from observability.shared.hhem import score_hallucination as _hhem_score
+    HHEM_AVAILABLE = True
+except ImportError:
+    HHEM_AVAILABLE = False
+
+try:
+    from google.cloud import bigquery as _bq
+    BQ_AVAILABLE = True
+except ImportError:
+    BQ_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
@@ -59,6 +76,67 @@ THRESHOLDS = {
 
 EVAL_CASES_PATH = Path(__file__).parent.parent / "tests" / "eval_cases.json"
 DEFAULT_OUTPUT  = Path(__file__).parent.parent / "eval_results.json"
+
+# ---------------------------------------------------------------------------
+# Observability: HHEM scoring + BigQuery telemetry logging
+# ---------------------------------------------------------------------------
+
+BQ_PROJECT_ID = os.environ.get("PROJECT_ID", "")
+BQ_DATASET    = os.environ.get("BQ_DATASET_ID", "agent_observability")
+BQ_TABLE      = os.environ.get("BQ_TABLE_ID", "telemetry")
+IS_BASELINE   = os.environ.get("EVAL_IS_BASELINE", "true").lower() == "true"
+
+
+def score_hhem(question: str, answer: str) -> float | None:
+    """Run HHEM hallucination scoring. Returns None if HHEM not available."""
+    if not HHEM_AVAILABLE or not answer:
+        return None
+    try:
+        return round(_hhem_score(question, answer), 4)
+    except Exception as exc:
+        print(f"  [HHEM warning: {exc}]", end="")
+        return None
+
+
+def log_to_bq(
+    request_id: str,
+    question: str,
+    answer: str,
+    citations: list[str],
+    latency_ms: float,
+    hhem_score: float | None,
+) -> None:
+    """Write an eval telemetry row to BigQuery (best-effort, non-fatal)."""
+    if not BQ_AVAILABLE or not BQ_PROJECT_ID:
+        return
+    try:
+        client = _bq.Client(project=BQ_PROJECT_ID)
+        table_ref = f"{BQ_PROJECT_ID}.{BQ_DATASET}.{BQ_TABLE}"
+        import datetime as _dt
+        row = {
+            "timestamp":               _dt.datetime.utcnow().isoformat() + "Z",
+            "request_id":              request_id,
+            "query":                   question[:1024],
+            "source":                  "eval",
+            "search_latency_ms":       None,   # not available from eval runner
+            "retrieval_score_mean":    None,
+            "retrieval_score_std":     None,
+            "retrieval_score_entropy": None,
+            "chunk_count":             None,
+            "reranker_score_mean":     None,
+            "anomaly_score":           None,
+            "is_anomaly":              None,
+            "is_baseline":             IS_BASELINE,
+            "answer_length":           len(answer),
+            "citation_count":          len(citations),
+            "hhem_score":              hhem_score,
+            "latency_ms":              round(latency_ms, 2),
+        }
+        errors = client.insert_rows_json(table_ref, [row])
+        if errors:
+            print(f"  [BQ warning: {errors}]", end="")
+    except Exception as exc:
+        print(f"  [BQ logging skipped: {exc}]", end="")
 
 # ---------------------------------------------------------------------------
 # ADK agent caller
@@ -389,6 +467,7 @@ def main():
         }
 
         try:
+            request_id = str(uuid.uuid4())
             answer, citations, latency_ms = call_agent(case["question"])
             result["answer"]    = answer
             result["citations"] = citations
@@ -408,14 +487,21 @@ def main():
                 scores["faithfulness"]     = None
                 scores["answer_relevance"] = None
 
+            # ── ML Observability: HHEM + BigQuery telemetry ───────────────
+            hhem = score_hhem(case["question"], answer)
+            if hhem is not None:
+                scores["hhem_score"] = hhem
+            log_to_bq(request_id, case["question"], answer, citations, latency_ms, hhem)
+
             result["scores"] = scores
 
             kw   = f"kw={scores['keyword_recall']:.2f}"
             cite = f"cite={'✅' if scores['citation_recall'] == 1.0 else '❌'}"
+            hhem_str = f" hhem={hhem:.2f}" if hhem is not None else ""
             if not args.no_judge:
-                print(f"{kw} {cite} faith={scores['faithfulness']:.2f} rel={scores['answer_relevance']:.2f} {latency_ms:.0f}ms")
+                print(f"{kw} {cite} faith={scores['faithfulness']:.2f} rel={scores['answer_relevance']:.2f}{hhem_str} {latency_ms:.0f}ms")
             else:
-                print(f"{kw} {cite} {latency_ms:.0f}ms")
+                print(f"{kw} {cite}{hhem_str} {latency_ms:.0f}ms")
 
         except Exception as e:
             result["error"] = str(e)

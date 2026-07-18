@@ -1,0 +1,58 @@
+name: Retrain Observability Models
+
+on:
+  schedule:
+    # Every Sunday at 02:00 UTC — after a week of production traffic
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: 'Days of telemetry to include in retraining'
+        default: '30'
+        required: false
+
+permissions:
+  id-token: write   # Workload Identity Federation
+  contents: read
+
+jobs:
+  retrain:
+    name: Retrain IsolationForest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account:            ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install observability dependencies
+        run: pip install -r observability/requirements.txt
+
+      - name: Retrain IsolationForest
+        env:
+          PROJECT_ID:           ${{ vars.PROJECT_ID }}
+          GCS_MODEL_PATH:       ${{ vars.GCS_MODEL_PATH }}
+          BQ_DATASET_ID:        agent_observability
+          RETRAIN_LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '30' }}
+        run: python3 observability/retrain.py
+
+      - name: Summary
+        run: |
+          echo "### Observability Model Retrained ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Model**: IsolationForest (anomaly detection)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lookback**: ${{ github.event.inputs.lookback_days || '30' }} days" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: \`${{ vars.GCS_MODEL_PATH }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Cloud Run instances will pick up the new model on next cold start." >> $GITHUB_STEP_SUMMARY
