@@ -1,6 +1,6 @@
 output "docs_bucket" {
   value       = google_storage_bucket.docs.name
-  description = "GCS bucket name for the document corpus"
+  description = "GCS bucket name for the document corpus and model artifacts"
 }
 
 output "datastore_id" {
@@ -31,4 +31,14 @@ output "wif_provider" {
 output "deployer_service_account" {
   value       = google_service_account.deployer.email
   description = "Deployer service account email — set as WIF_SERVICE_ACCOUNT repo variable"
+}
+
+output "bq_dataset_id" {
+  value       = google_bigquery_dataset.observability.dataset_id
+  description = "BigQuery dataset for agent telemetry"
+}
+
+output "gcs_model_path" {
+  value       = "gs://${google_storage_bucket.docs.name}/models/iforest.pkl"
+  description = "GCS path for the IsolationForest model artifact"
 }
