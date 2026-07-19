@@ -16,6 +16,9 @@ Output schema (matches tests/eval_cases.json):
   question         — a question a worker on the floor might actually ask
   expected_keywords — 4-6 key phrases that must appear in a correct answer
   expected_sources  — [filename.txt] used to score citation recall
+
+The generator appends one static multi-turn memory case so regenerating doc
+cases does not remove memory coverage from provision/deploy validation.
 """
 
 import argparse
@@ -38,6 +41,32 @@ REGION      = os.environ.get("REGION", "us-central1")
 MODEL       = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 DOCS_DIR    = Path(__file__).parent.parent / "docs"
 OUTPUT_PATH = Path(__file__).parent.parent / "tests" / "eval_cases.json"
+
+MEMORY_EVAL_CASE = {
+    "id": "session-memory-line-context",
+    "category": "memory",
+    "skip_judge": True,
+    "turns": [
+        {
+            "question": (
+                "For this session, remember that I am assigned to Line 4 packaging "
+                "and I prefer concise checklist answers."
+            ),
+            "expected_keywords": ["Line 4", "packaging", "concise", "checklist"],
+            "expected_sources": [],
+        },
+        {
+            "question": (
+                "What line am I assigned to, and how should you format checklist "
+                "answers for me?"
+            ),
+            "expected_keywords": ["Line 4", "packaging", "concise", "checklist"],
+            "expected_sources": [],
+        },
+    ],
+    "expected_keywords": ["Line 4", "packaging", "concise", "checklist"],
+    "expected_sources": [],
+}
 
 GENERATOR_PROMPT = """\
 You are writing test cases for a RAG evaluation suite.
@@ -178,6 +207,7 @@ def main():
         time.sleep(1)  # gentle rate-limit buffer between docs
 
     all_cases = deduplicate_ids(all_cases)
+    all_cases.append(MEMORY_EVAL_CASE)
 
     print(f"\nTotal: {len(all_cases)} eval cases")
 

@@ -43,13 +43,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install requests google-genai -q
+        run: pip install requests google-genai google-cloud-bigquery -q
 
       - name: Run evaluations
         env:
           SERVICE_URL: ${{ vars.SERVICE_URL }}
           PROJECT_ID: ${{ vars.PROJECT_ID }}
           REGION: ${{ env.REGION }}
+          MEMORY_ENABLED: ${{ vars.MEMORY_ENABLED || 'true' }}
+          MEMORY_BACKEND: ${{ vars.MEMORY_BACKEND || 'session_state' }}
         run: python3 scripts/run_evals.py --output eval_results.json
 
       - name: Upload results artifact

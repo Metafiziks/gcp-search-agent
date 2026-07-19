@@ -1,6 +1,6 @@
 # gcp-search-agent
 
-A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links. Includes a built-in **automated evaluation suite** that scores every deployment on faithfulness, answer relevance, citation accuracy, and latency using Gemini 2.5 Flash as an LLM judge, plus an **ML observability layer** that logs retrieval telemetry to BigQuery, reranks results with Vertex AI Ranking, scores drift with IsolationForest, and retrains the anomaly model from production traces.
+A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links. Includes an optional **cloud-native memory layer** for scoped user/session continuity, a built-in **automated evaluation suite** that scores every deployment on faithfulness, answer relevance, citation accuracy, latency, and memory recall, plus an **ML observability layer** that logs retrieval and memory telemetry to BigQuery, reranks results with Vertex AI Ranking, scores drift with IsolationForest, and retrains the anomaly model from production traces.
 
 ```
 $ SESSION=$(curl -s -X POST https://<your-service>/apps/agent/users/u1/sessions \
@@ -26,8 +26,9 @@ Use absorbent pads and follow established spill response procedures.
 | Cloud Run | Hosts the ADK agent |
 | Vertex AI Search (Enterprise) | RAG — indexes documents and retrieves relevant passages (extractive answers) for the LLM to synthesize |
 | Vertex AI Ranking API | Re-ranks retrieved chunks before generation |
+| ADK session state memory | Optional short-term user/session context such as line assignment or answer-format preferences |
 | Cloud Storage | Stores the document corpus (public read for citation links) |
-| BigQuery | Structured telemetry store for retrieval, latency, hallucination, and drift metrics |
+| BigQuery | Structured telemetry store for retrieval, memory, latency, hallucination, and drift metrics |
 | Artifact Registry | Container images for agent builds |
 | Workload Identity Federation | Secretless GitHub Actions auth |
 
@@ -43,14 +44,15 @@ User question
      │
      ▼
 Cloud Run (Google ADK — Gemini 2.5 Flash via Agent Platform)
-     │ calls search_knowledge_base()
-     ▼
-Retrieved chunks
-     │
-     ▼
-Vertex AI Ranking API + IsolationForest drift scorer
-     ├── Gemini 2.5 Flash synthesizes cited answer
-     └── BigQuery logs retrieval + answer quality telemetry
+     ├── memory tools (optional ADK session/user state)
+     │     └── BigQuery logs memory reads/writes
+     └── search_knowledge_base()
+           ▼
+      Retrieved chunks
+           ▼
+      Vertex AI Ranking API + IsolationForest drift scorer
+           ├── Gemini 2.5 Flash synthesizes cited answer
+           └── BigQuery logs retrieval + answer quality telemetry
 ```
 
 ## Prerequisites
@@ -115,6 +117,27 @@ Any folder structure is preserved as the GCS path and appears in citation links.
 | `ENV_NAME` | — | `search-agent` | Prefix for all resource names |
 | `REGION` | — | `us-central1` | Cloud Run + Artifact Registry region |
 | `GEMINI_MODEL` | — | `gemini-2.5-flash` | Override the Gemini model |
+| `MEMORY_ENABLED` | — | `true` in `deploy.sh`, `false` in bare local imports | Enables memory tools |
+| `MEMORY_BACKEND` | — | `session_state` | `session_state`, `adk_memory`, or `memory_bank` |
+| `MEMORY_SCOPE` | — | `session` | `session` keeps context in the current ADK session; `user` uses ADK's `user:` state namespace |
+| `MEMORY_MAX_ITEMS` | — | `20` | Maximum remembered items kept per scope for session-state memory |
+| `MEMORY_TTL_SECONDS` | — | `0` | Optional TTL for session-state memory; `0` disables expiry |
+| `MEMORY_OPTIONAL` | — | `true` | If `false`, unavailable configured memory backends raise errors instead of returning an unavailable message |
+
+## Memory layer
+
+Memory is deliberately separate from document retrieval. Vertex AI Search remains the source of truth for manufacturing procedures, safety rules, maintenance instructions, and quality standards. Memory is only for scoped continuity such as "I am assigned to Line 4" or "prefer concise checklist answers"; memory-only answers should not cite procedure documents.
+
+The Cloud Run-first template enables `MEMORY_BACKEND=session_state` by default in `scripts/deploy.sh`. This uses ADK tool context state and supports:
+
+| Capability | Behavior |
+|---|---|
+| Short-term continuity | Saves and recalls user/session context within ADK state |
+| Scope | `MEMORY_SCOPE=session` for per-session memory, or `MEMORY_SCOPE=user` for ADK's user-state namespace |
+| Retention | Bounded by `MEMORY_MAX_ITEMS` and optional `MEMORY_TTL_SECONDS` |
+| Telemetry | Memory tool calls write `source='memory'` rows to BigQuery |
+
+Long-term managed memory is exposed as a clean configuration path, not forced into this Cloud Run architecture. `MEMORY_BACKEND=adk_memory` uses ADK's memory service methods when a memory service is configured for the runtime. `MEMORY_BACKEND=memory_bank` is documented as the Vertex AI Agent Engine Memory Bank target path, but this template does not provision Agent Engine deployment because the agent is deployed directly to Cloud Run with `adk deploy cloud_run`. To use Memory Bank, deploy the agent through Vertex AI Agent Engine, configure the ADK memory service for that runtime, then switch the backend from `session_state`.
 
 ## GitHub Actions CI/CD
 
@@ -137,7 +160,7 @@ git add .github/workflows/ && git commit -m "Activate CI workflows" && git push
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `deploy.yml` | Push to `src/` | Rebuilds and redeploys the Cloud Run agent |
-| `run-evals.yml` | Push to `src/` or `tests/`, weekly | Runs the 12-case eval suite via Gemini judge; fails CI if metrics drop below threshold |
+| `run-evals.yml` | Push to `src/` or `tests/`, weekly | Runs the eval suite, including the memory case; fails CI if metrics drop below threshold |
 | `retrain-observability.yml` | Weekly or manual | Retrains the IsolationForest drift model from the last 30 days of BigQuery telemetry and uploads `model.pkl` to GCS |
 
 No GCP credentials stored as secrets — all auth via Workload Identity Federation.
@@ -151,8 +174,9 @@ The template ships with a three-layer observability stack that goes beyond thres
 | Component | Where | When |
 |-----------|-------|------|
 | **Vertex AI Ranking API** | Agent (Cloud Run) | Every request — re-ranks retrieved chunks for better relevance |
+| **ADK session-state memory** | Agent (Cloud Run) | Optional — reads/writes scoped user/session continuity |
 | **IsolationForest scorer** | Agent (Cloud Run) | Every request — flags anomalous retrieval patterns |
-| **BigQuery telemetry** | Agent (Cloud Run) | Every request — logs retrieval features as structured rows |
+| **BigQuery telemetry** | Agent (Cloud Run) | Every request — logs retrieval and memory features as structured rows |
 | **HHEM hallucination scorer** | Eval runner | Every eval run — scores answer consistency |
 | **IForest baseline training** | Deploy time | Once — bootstraps model from eval telemetry |
 | **IForest retraining** | Weekly (GitHub Actions) | Adapts model to production traffic distribution |
@@ -172,6 +196,21 @@ IsolationForest — scores the 6-feature retrieval vector for anomalies
 BigQuery — logs telemetry row (fire-and-forget daemon thread, non-blocking)
     ↓
 Gemini — generates answer from re-ranked top-5 chunks
+```
+
+**Memory tool calls (when enabled):**
+```
+User gives session/user context
+    ↓
+save_user_memory — writes scoped ADK state
+    ↓
+BigQuery — logs memory_enabled, memory_backend, write count, latency
+
+Follow-up needing continuity
+    ↓
+recall_user_memory — reads scoped ADK state
+    ↓
+BigQuery — logs memory_enabled, memory_backend, read count, latency
 ```
 
 **Eval time (each eval run):**
@@ -224,7 +263,7 @@ ORDER BY day;
 
 ### Baseline training
 
-At deploy time, `deploy.sh` runs the eval suite 5× to collect 60 baseline "healthy" rows in BigQuery, then trains the initial IsolationForest:
+At deploy time, `deploy.sh` runs the eval suite 5× to collect baseline "healthy" rows in BigQuery, then trains the initial IsolationForest:
 
 ```bash
 PROJECT_ID=your-project \
@@ -233,6 +272,8 @@ python3 observability/train_baseline.py
 ```
 
 The agent loads the model from GCS at startup via the `GCS_MODEL_PATH` env var. If the model isn't present yet (first deploy), anomaly scoring is disabled gracefully — the agent still works, it just logs `anomaly_score=0`.
+
+The training job uses rows with retrieval features. It first looks for explicit `is_baseline=true` retrieval rows, then falls back to recent `source='runtime'` retrieval rows produced by the deploy-time eval run.
 
 ### Manual retraining
 
@@ -257,6 +298,11 @@ Or trigger the workflow manually from the Actions tab.
 | `anomaly_score` | FLOAT64 | Runtime | IForest decision function (negative = anomalous) |
 | `hhem_score` | FLOAT64 | Eval | Hallucination probability [0=consistent, 1=hallucinated] |
 | `latency_ms` | FLOAT64 | Eval | End-to-end request latency |
+| `memory_enabled` | BOOL | Runtime/Eval/Memory | Whether memory was enabled for the row |
+| `memory_backend` | STRING | Runtime/Eval/Memory | `disabled`, `session_state`, `adk_memory`, or `memory_bank` |
+| `memory_read_count` | INT64 | Memory/Eval | Number of memory records read |
+| `memory_write_count` | INT64 | Memory/Eval | Number of memory records written |
+| `memory_latency_ms` | FLOAT64 | Memory/Eval | Memory read/write latency |
 
 
 
@@ -266,7 +312,7 @@ After deploying:
 bash scripts/eval.sh
 ```
 
-`eval.sh` resolves the Cloud Run service URL from `gcloud` automatically. To skip the Gemini judge:
+`eval.sh` resolves the Cloud Run service URL from `gcloud` automatically and includes a two-turn memory case when memory is enabled. To skip the Gemini judge:
 
 ```bash
 bash scripts/eval.sh --no-judge
@@ -281,6 +327,7 @@ Results are written to `eval_results.json`. Metrics scored:
 | p95 Latency | Deterministic | ≤ 25000ms |
 | Faithfulness | Gemini 2.5 Flash judge | ≥ 0.70 |
 | Answer Relevance | Gemini 2.5 Flash judge | ≥ 0.75 |
+| Memory Recall | Deterministic two-turn eval | Expected remembered terms present |
 
 **Keeping evals in sync with your docs:**
 
@@ -304,6 +351,7 @@ bash scripts/eval.sh
 | Vector store | Vertex AI Search (built-in) | OpenSearch Serverless | Azure AI Search (built-in) |
 | Auth | Workload Identity Federation | GitHub OIDC | Azure OIDC |
 | Eval judge | Gemini 2.5 Flash | Amazon Nova Pro | GPT-5 |
+| Memory | ADK session/user state; optional Agent Engine Memory Bank path | Bedrock Agent session/context path | AI Foundry thread/session context path |
 | Teardown | `bash scripts/teardown.sh` | `bash scripts/teardown.sh` | `azd down` |
 
 ## Teardown
@@ -327,3 +375,4 @@ Deletes the Cloud Run service first (deployed outside Terraform by ADK), then ru
 | `Cannot use enterprise edition features` | Upgrade search engine tier via REST PATCH or recreate with `SEARCH_TIER_ENTERPRISE` |
 | `serving config not found` | Ensure serving config name is `default_search` (not `default_config`) |
 | `gsutil` Python version error | Use `gcloud storage rsync` instead |
+| `MEMORY_BACKEND=memory_bank` returns unavailable | This Cloud Run template does not provision Vertex AI Agent Engine Memory Bank; use `session_state`, or deploy through Agent Engine and configure ADK memory |

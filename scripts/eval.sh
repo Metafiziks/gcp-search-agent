@@ -12,6 +12,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_NAME="${ENV_NAME:-search-agent}"
 REGION="${REGION:-us-central1}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
+MEMORY_ENABLED="${MEMORY_ENABLED:-true}"
+MEMORY_BACKEND="${MEMORY_BACKEND:-session_state}"
 
 if [[ -z "${PROJECT_ID}" ]]; then
   echo "ERROR: PROJECT_ID is not set and could not be resolved from gcloud config."
@@ -40,7 +42,7 @@ if [[ ! -d "${VENV_DIR}" ]]; then
   echo "► Creating Python venv..."
   python3 -m venv "${VENV_DIR}"
 fi
-"${VENV_DIR}/bin/pip" install requests google-genai -q
+"${VENV_DIR}/bin/pip" install requests google-genai google-cloud-bigquery -q
 
 echo "► Running evaluations against: ${SERVICE_URL}"
 echo ""
@@ -64,6 +66,8 @@ echo ""
 SERVICE_URL="${SERVICE_URL}" \
 PROJECT_ID="${PROJECT_ID}" \
 REGION="${REGION}" \
+MEMORY_ENABLED="${MEMORY_ENABLED}" \
+MEMORY_BACKEND="${MEMORY_BACKEND}" \
 THRESHOLD_KEYWORD_RECALL="${THRESHOLD_KEYWORD_RECALL:-0.35}" \
 "${VENV_DIR}/bin/python3" "${SCRIPT_DIR}/run_evals.py" \
   --output "${REPO_ROOT}/eval_results.json" \

@@ -150,5 +150,39 @@
     "expected_sources": [
       "line_clearance_standard.txt"
     ]
+  },
+  {
+    "id": "session-memory-line-context",
+    "category": "memory",
+    "skip_judge": true,
+    "turns": [
+      {
+        "question": "For this session, remember that I am assigned to Line 4 packaging and I prefer concise checklist answers.",
+        "expected_keywords": [
+          "Line 4",
+          "packaging",
+          "concise",
+          "checklist"
+        ],
+        "expected_sources": []
+      },
+      {
+        "question": "What line am I assigned to, and how should you format checklist answers for me?",
+        "expected_keywords": [
+          "Line 4",
+          "packaging",
+          "concise",
+          "checklist"
+        ],
+        "expected_sources": []
+      }
+    ],
+    "expected_keywords": [
+      "Line 4",
+      "packaging",
+      "concise",
+      "checklist"
+    ],
+    "expected_sources": []
   }
 ]
