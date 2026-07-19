@@ -14,6 +14,7 @@ from google.cloud import discoveryengine_v1beta as discoveryengine
 
 import bigquery_sink
 import iforest_scorer
+import memory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,9 +57,10 @@ def _rerank(project_id: str, query: str, records: list[tuple[str, str]]) -> list
         logger.warning("Reranker unavailable, using original order: %s", exc)
         return [(rid, content, 1.0 / (i + 1)) for i, (rid, content) in enumerate(records)]
 
-INSTRUCTIONS = """
-You are a manufacturing documentation assistant. You answer questions ONLY
-using information retrieved from the organization's procedure documents.
+BASE_INSTRUCTIONS = """
+You are a manufacturing documentation assistant. Answer manufacturing
+procedure, safety, maintenance, and quality questions ONLY using information
+retrieved from the organization's procedure documents.
 
 STRICT RULES — follow these without exception:
 1. If the knowledge base returns no relevant documents, respond with exactly:
@@ -76,6 +78,25 @@ Answering style (when documents are retrieved):
 - Always cite your sources at the end: [Document Name](url)
 - Only cite documents you actually used to answer the question.
 """
+
+MEMORY_INSTRUCTIONS = """
+
+Memory layer:
+- Use memory only for scoped user/session continuity such as a user's line,
+  role, preferences, or prior context. Do not use memory as a source for
+  manufacturing procedures, requirements, safety rules, or quality standards.
+- At the start of a user turn that depends on prior user/session context, call
+  recall_user_memory before deciding whether document retrieval is needed.
+- When a user explicitly gives durable context or a preference to remember,
+  call save_user_memory with a short topic and concise content.
+- Keep document retrieval separate: call search_knowledge_base for policy,
+  procedure, maintenance, safety, or quality facts. Memory must never replace
+  citations from the document corpus.
+- If answering only from remembered user/session context, say "You told me..."
+  or "For this session..." and do not cite procedure documents.
+"""
+
+INSTRUCTIONS = BASE_INSTRUCTIONS + (MEMORY_INSTRUCTIONS if memory.is_enabled() else "")
 
 
 def search_knowledge_base(query: str) -> str:
@@ -193,6 +214,8 @@ def search_knowledge_base(query: str) -> str:
         reranker_score_mean=sum(reranker_scores) / len(reranker_scores) if reranker_scores else 0.0,
         anomaly_score=anomaly_score,
         is_anomaly=is_anomaly,
+        memory_enabled=memory.is_enabled(),
+        memory_backend=memory.backend_name(),
     )
 
     # ── Build context from re-ranked top-5 ───────────────────────────────────
@@ -207,9 +230,14 @@ def search_knowledge_base(query: str) -> str:
     return "\n\n---\n\n".join(excerpts) if excerpts else "No relevant documents found."
 
 
+TOOLS = [search_knowledge_base]
+if memory.is_enabled():
+    TOOLS.extend([memory.recall_user_memory, memory.save_user_memory])
+
+
 root_agent = Agent(
     name="search_agent",
     model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
     instruction=INSTRUCTIONS,
-    tools=[search_knowledge_base],
+    tools=TOOLS,
 )

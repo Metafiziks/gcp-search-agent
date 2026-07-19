@@ -3,8 +3,10 @@
 Bootstrap IsolationForest training from eval telemetry.
 
 Reads baseline rows from BigQuery (rows written with is_baseline=True during
-the deploy-time eval run), builds the feature matrix, trains an IForest model,
-and uploads it to GCS for the agent to load at startup.
+the deploy-time eval run), then falls back to recent runtime retrieval rows
+created by the deploy-time eval if explicit baseline rows are unavailable.
+It builds the feature matrix, trains an IForest model, and uploads it to GCS
+for the agent to load at startup.
 
 Usage:
     PROJECT_ID=my-project \
@@ -36,12 +38,13 @@ DATASET_ID     = os.environ.get("BQ_DATASET_ID", "agent_observability")
 GCS_MODEL_PATH = os.environ["GCS_MODEL_PATH"]
 LOCAL_MODEL    = "/tmp/iforest_baseline.pkl"
 MIN_ROWS       = int(os.environ.get("MIN_BASELINE_ROWS", "20"))
+LOOKBACK_MINUTES = int(os.environ.get("BASELINE_LOOKBACK_MINUTES", "120"))
 
 
 def load_baseline_rows() -> list[dict]:
     from google.cloud import bigquery
     client = bigquery.Client(project=PROJECT_ID)
-    query = f"""
+    explicit_query = f"""
         SELECT *
         FROM `{PROJECT_ID}.{DATASET_ID}.telemetry`
         WHERE is_baseline = TRUE
@@ -49,7 +52,25 @@ def load_baseline_rows() -> list[dict]:
         ORDER BY timestamp DESC
         LIMIT 1000
     """
-    return [dict(r) for r in client.query(query).result()]
+    rows = [dict(r) for r in client.query(explicit_query).result()]
+    if len(rows) >= MIN_ROWS:
+        return rows
+
+    logger.info(
+        "Found %d explicit baseline retrieval rows; falling back to runtime rows from the last %d minutes.",
+        len(rows),
+        LOOKBACK_MINUTES,
+    )
+    fallback_query = f"""
+        SELECT *
+        FROM `{PROJECT_ID}.{DATASET_ID}.telemetry`
+        WHERE source = 'runtime'
+          AND retrieval_score_mean IS NOT NULL
+          AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {LOOKBACK_MINUTES} MINUTE)
+        ORDER BY timestamp DESC
+        LIMIT 1000
+    """
+    return [dict(r) for r in client.query(fallback_query).result()]
 
 
 def main() -> None:

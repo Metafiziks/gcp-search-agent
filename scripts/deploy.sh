@@ -4,6 +4,12 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID env var}"
 ENV_NAME="${ENV_NAME:-search-agent}"
 REGION="${REGION:-us-central1}"
+MEMORY_ENABLED="${MEMORY_ENABLED:-true}"
+MEMORY_BACKEND="${MEMORY_BACKEND:-session_state}"
+MEMORY_SCOPE="${MEMORY_SCOPE:-session}"
+MEMORY_MAX_ITEMS="${MEMORY_MAX_ITEMS:-20}"
+MEMORY_TTL_SECONDS="${MEMORY_TTL_SECONDS:-0}"
+MEMORY_OPTIONAL="${MEMORY_OPTIONAL:-true}"
 
 echo ""
 echo "=== Deploy: Agent to Cloud Run ==="
@@ -24,7 +30,7 @@ adk deploy cloud_run \
   -- \
   --service-account "$AGENT_SA" \
   --memory 1Gi \
-  --set-env-vars "PROJECT_ID=${PROJECT_ID},SEARCH_DATASTORE_ID=${DATASTORE_ID},SEARCH_ENGINE_ID=${ENGINE_ID},SEARCH_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION},BQ_DATASET_ID=${BQ_DATASET_ID},GCS_MODEL_PATH=${GCS_MODEL_PATH}" \
+  --set-env-vars "PROJECT_ID=${PROJECT_ID},SEARCH_DATASTORE_ID=${DATASTORE_ID},SEARCH_ENGINE_ID=${ENGINE_ID},SEARCH_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION},BQ_DATASET_ID=${BQ_DATASET_ID},GCS_MODEL_PATH=${GCS_MODEL_PATH},MEMORY_ENABLED=${MEMORY_ENABLED},MEMORY_BACKEND=${MEMORY_BACKEND},MEMORY_SCOPE=${MEMORY_SCOPE},MEMORY_MAX_ITEMS=${MEMORY_MAX_ITEMS},MEMORY_TTL_SECONDS=${MEMORY_TTL_SECONDS},MEMORY_OPTIONAL=${MEMORY_OPTIONAL}" \
   --allow-unauthenticated
 echo "  ✓ Agent deployed"
 echo ""
@@ -52,6 +58,8 @@ if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
   gh variable set WIF_SERVICE_ACCOUNT --body "${WIF_SA}"
   gh variable set PROJECT_ID          --body "${PROJECT_ID}"
   gh variable set SERVICE_URL         --body "${SERVICE_URL}"
+  gh variable set MEMORY_ENABLED      --body "${MEMORY_ENABLED}"
+  gh variable set MEMORY_BACKEND      --body "${MEMORY_BACKEND}"
   echo "  ✓ Repo variables set"
   echo ""
   echo "► To activate GitHub Actions workflows, copy them to .github/workflows/:"
@@ -62,6 +70,8 @@ else
   echo "  Run manually after deploy:"
   echo "    gh variable set SERVICE_URL --body '${SERVICE_URL}'"
   echo "    gh variable set PROJECT_ID  --body '${PROJECT_ID}'"
+  echo "    gh variable set MEMORY_ENABLED --body '${MEMORY_ENABLED}'"
+  echo "    gh variable set MEMORY_BACKEND --body '${MEMORY_BACKEND}'"
 fi
 echo ""
 
@@ -88,6 +98,9 @@ for run in $(seq 1 "${BASELINE_RUNS}"); do
   PROJECT_ID="${PROJECT_ID}" \
   REGION="${REGION}" \
   BQ_DATASET_ID="${BQ_DATASET_ID}" \
+  MEMORY_ENABLED="${MEMORY_ENABLED}" \
+  MEMORY_BACKEND="${MEMORY_BACKEND}" \
+  THRESHOLD_KEYWORD_RECALL="${THRESHOLD_KEYWORD_RECALL:-0.35}" \
   EVAL_IS_BASELINE="true" \
   "${VENV_DIR}/bin/python3" "${SCRIPT_DIR}/run_evals.py" \
     --output "${SCRIPT_DIR}/../eval_results.json"

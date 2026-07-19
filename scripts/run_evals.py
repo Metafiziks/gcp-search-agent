@@ -46,7 +46,7 @@ from google.genai import types
 try:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from observability.shared.hhem import score_hallucination as _hhem_score
-    HHEM_AVAILABLE = True
+    HHEM_AVAILABLE = os.environ.get("NO_HHEM", "0") != "1"
 except ImportError:
     HHEM_AVAILABLE = False
 
@@ -65,6 +65,8 @@ PROJECT_ID  = os.environ.get("PROJECT_ID", "")
 REGION      = os.environ.get("REGION", "us-central1")
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gemini-2.5-flash")
 APP_NAME    = os.environ.get("ADK_APP_NAME", "agent")
+MEMORY_ENABLED = os.environ.get("MEMORY_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+MEMORY_BACKEND = os.environ.get("MEMORY_BACKEND", "disabled" if not MEMORY_ENABLED else "session_state")
 
 THRESHOLDS = {
     "faithfulness":    float(os.environ.get("THRESHOLD_FAITHFULNESS",    "0.70")),
@@ -105,6 +107,9 @@ def log_to_bq(
     citations: list[str],
     latency_ms: float,
     hhem_score: float | None,
+    memory_read_count: int = 0,
+    memory_write_count: int = 0,
+    memory_latency_ms: float | None = None,
 ) -> None:
     """Write an eval telemetry row to BigQuery (best-effort, non-fatal)."""
     if not BQ_AVAILABLE or not BQ_PROJECT_ID:
@@ -112,9 +117,8 @@ def log_to_bq(
     try:
         client = _bq.Client(project=BQ_PROJECT_ID)
         table_ref = f"{BQ_PROJECT_ID}.{BQ_DATASET}.{BQ_TABLE}"
-        import datetime as _dt
         row = {
-            "timestamp":               _dt.datetime.utcnow().isoformat() + "Z",
+            "timestamp":               datetime.now(timezone.utc).isoformat(),
             "request_id":              request_id,
             "query":                   question[:1024],
             "source":                  "eval",
@@ -131,6 +135,11 @@ def log_to_bq(
             "citation_count":          len(citations),
             "hhem_score":              hhem_score,
             "latency_ms":              round(latency_ms, 2),
+            "memory_enabled":          MEMORY_ENABLED,
+            "memory_backend":          MEMORY_BACKEND if MEMORY_ENABLED else "disabled",
+            "memory_read_count":       memory_read_count,
+            "memory_write_count":      memory_write_count,
+            "memory_latency_ms":       round(memory_latency_ms, 2) if memory_latency_ms is not None else None,
         }
         errors = client.insert_rows_json(table_ref, [row])
         if errors:
@@ -154,16 +163,28 @@ def _create_session(user_id: str) -> str:
     return resp.json()["id"]
 
 
-def call_agent(question: str) -> tuple[str, list[str], float]:
+def _extract_answer_and_citations(events: list[dict]) -> tuple[str, list[str]]:
+    answer = ""
+    for event in events:
+        content = event.get("content", {})
+        if content.get("role") == "model":
+            for part in content.get("parts", []):
+                if "text" in part:
+                    answer += part["text"]
+
+    citations = re.findall(r"\[([^\]]+\.txt)\]", answer)
+    if not citations:
+        citations = re.findall(r"\]\(https?://[^\)]*?/([^/\)]+\.txt)[^\)]*\)", answer)
+    return answer, citations
+
+
+def call_agent_turn(question: str, user_id: str, session_id: str) -> tuple[str, list[str], float]:
     """
-    Run one turn against the ADK Cloud Run agent.
+    Run one turn against an existing ADK Cloud Run agent session.
     Returns (answer, citations, latency_ms).
     Citations are filenames extracted from markdown links in the answer.
     Retries once on 500 (transient Gemini rate limit inside ADK).
     """
-    user_id = "eval"
-    session_id = _create_session(user_id)
-
     body = {
         "appName": APP_NAME,
         "userId": user_id,
@@ -188,33 +209,46 @@ def call_agent(question: str) -> tuple[str, list[str], float]:
             wait = 15 * (attempt + 1)
             print(f" [500, retrying in {wait}s]", end="", flush=True)
             time.sleep(wait)
-            session_id = _create_session(user_id)
-            body["sessionId"] = session_id
             continue
 
         resp.raise_for_status()
         break
 
     events = resp.json()
-
-    # Collect text from all model-role events
-    answer = ""
-    for event in events:
-        content = event.get("content", {})
-        if content.get("role") == "model":
-            for part in content.get("parts", []):
-                if "text" in part:
-                    answer += part["text"]
-
-    # Extract filenames from Markdown citation links.
-    # GCP format: [title_without_ext](https://.../filename.txt)
-    # Also matches: [filename.txt](https://...)
-    citations = re.findall(r"\[([^\]]+\.txt)\]", answer)
-    # Fall back: extract .txt filename from the URL itself
-    if not citations:
-        citations = re.findall(r"\]\(https?://[^\)]*?/([^/\)]+\.txt)[^\)]*\)", answer)
-
+    answer, citations = _extract_answer_and_citations(events)
     return answer, citations, latency_ms
+
+
+def call_agent(question: str) -> tuple[str, list[str], float]:
+    user_id = "eval"
+    session_id = _create_session(user_id)
+    return call_agent_turn(question, user_id, session_id)
+
+
+def call_agent_sequence(turns: list[dict], case_id: str) -> tuple[str, list[str], float, list[dict]]:
+    user_id = f"eval-{case_id}"
+    session_id = _create_session(user_id)
+    turn_results = []
+    total_latency_ms = 0.0
+    final_answer = ""
+    final_citations: list[str] = []
+    for turn_index, turn in enumerate(turns, 1):
+        answer, citations, latency_ms = call_agent_turn(turn["question"], user_id, session_id)
+        total_latency_ms += latency_ms
+        final_answer = answer
+        final_citations = citations
+        turn_results.append(
+            {
+                "turn": turn_index,
+                "question": turn["question"],
+                "answer": answer,
+                "citations": citations,
+                "latency_ms": round(latency_ms, 1),
+            }
+        )
+        if turn_index < len(turns):
+            time.sleep(1)
+    return final_answer, final_citations, total_latency_ms, turn_results
 
 # ---------------------------------------------------------------------------
 # Deterministic scorers
@@ -402,10 +436,12 @@ def format_markdown_report(summary: dict, cases: list[dict], failures: list[str]
         if c.get("error"):
             lines.append(f"| {c['id']} | ERR | ERR | ERR | ERR | — |")
         else:
+            faith = "n/a" if s.get("faithfulness") is None else f"{s['faithfulness']:.2f}"
+            relevance = "n/a" if s.get("answer_relevance") is None else f"{s['answer_relevance']:.2f}"
             lines.append(
                 f"| {c['id']} "
-                f"| {s['faithfulness']:.2f} "
-                f"| {s['answer_relevance']:.2f} "
+                f"| {faith} "
+                f"| {relevance} "
                 f"| {'✅' if s['citation_recall'] == 1.0 else '❌'} "
                 f"| {s['keyword_recall']:.2f} "
                 f"| {c['latency_ms']:.0f}ms |"
@@ -449,6 +485,7 @@ def main():
     print(f"Agent:  {SERVICE_URL}")
     print(f"Judge:  {'DISABLED' if args.no_judge else JUDGE_MODEL} (Vertex AI)")
     print(f"Project:{PROJECT_ID}")
+    print(f"Memory: {'enabled' if MEMORY_ENABLED else 'disabled'} ({MEMORY_BACKEND if MEMORY_ENABLED else 'disabled'})")
     print()
 
     results = []
@@ -456,10 +493,16 @@ def main():
     for i, case in enumerate(eval_cases, 1):
         print(f"[{i:2d}/{len(eval_cases)}] {case['id']} ... ", end="", flush=True)
 
+        is_memory_case = case.get("category") == "memory" or "turns" in case
+        final_turn = case.get("turns", [{}])[-1] if is_memory_case else case
+        question = final_turn.get("question", case.get("question", ""))
+        expected_keywords = final_turn.get("expected_keywords", case.get("expected_keywords", []))
+        expected_sources = final_turn.get("expected_sources", case.get("expected_sources", []))
+
         result = {
             "id": case["id"],
             "category": case["category"],
-            "question": case["question"],
+            "question": question,
             "answer": "",
             "citations": [],
             "latency_ms": 0,
@@ -468,18 +511,23 @@ def main():
 
         try:
             request_id = str(uuid.uuid4())
-            answer, citations, latency_ms = call_agent(case["question"])
+            if is_memory_case:
+                answer, citations, latency_ms, turn_results = call_agent_sequence(case["turns"], case["id"])
+                result["turns"] = turn_results
+            else:
+                answer, citations, latency_ms = call_agent(case["question"])
             result["answer"]    = answer
             result["citations"] = citations
             result["latency_ms"] = round(latency_ms, 1)
 
             scores = {
-                "keyword_recall":  score_keyword_recall(answer, case["expected_keywords"]),
-                "citation_recall": score_citation_recall(citations, case["expected_sources"]),
+                "keyword_recall":  score_keyword_recall(answer, expected_keywords),
+                "citation_recall": score_citation_recall(citations, expected_sources),
             }
 
-            if not args.no_judge:
-                judge_scores = call_judge(case["question"], answer, citations)
+            run_judge = not args.no_judge and not case.get("skip_judge", False) and not is_memory_case
+            if run_judge:
+                judge_scores = call_judge(question, answer, citations)
                 scores["faithfulness"]     = round(judge_scores["faithfulness"], 4)
                 scores["answer_relevance"] = round(judge_scores["answer_relevance"], 4)
                 scores["judge_reasoning"]  = judge_scores["reasoning"]
@@ -488,17 +536,27 @@ def main():
                 scores["answer_relevance"] = None
 
             # ── ML Observability: HHEM + BigQuery telemetry ───────────────
-            hhem = score_hhem(case["question"], answer)
+            hhem = score_hhem(question, answer)
             if hhem is not None:
                 scores["hhem_score"] = hhem
-            log_to_bq(request_id, case["question"], answer, citations, latency_ms, hhem)
+            log_to_bq(
+                request_id,
+                question,
+                answer,
+                citations,
+                latency_ms,
+                hhem,
+                memory_read_count=1 if is_memory_case else 0,
+                memory_write_count=1 if is_memory_case else 0,
+                memory_latency_ms=latency_ms if is_memory_case else None,
+            )
 
             result["scores"] = scores
 
             kw   = f"kw={scores['keyword_recall']:.2f}"
             cite = f"cite={'✅' if scores['citation_recall'] == 1.0 else '❌'}"
             hhem_str = f" hhem={hhem:.2f}" if hhem is not None else ""
-            if not args.no_judge:
+            if run_judge:
                 print(f"{kw} {cite} faith={scores['faithfulness']:.2f} rel={scores['answer_relevance']:.2f}{hhem_str} {latency_ms:.0f}ms")
             else:
                 print(f"{kw} {cite}{hhem_str} {latency_ms:.0f}ms")
@@ -525,6 +583,11 @@ def main():
         "service_url":   SERVICE_URL,
         "judge_model":   JUDGE_MODEL if not args.no_judge else None,
         "thresholds":    THRESHOLDS,
+        "memory":        {
+            "enabled": MEMORY_ENABLED,
+            "backend": MEMORY_BACKEND if MEMORY_ENABLED else "disabled",
+            "case_count": sum(1 for case in eval_cases if case.get("category") == "memory" or "turns" in case),
+        },
         "passed":        passed,
         "summary":       summary,
         "cases":         results,
