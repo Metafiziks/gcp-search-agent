@@ -1,6 +1,6 @@
 # gcp-search-agent
 
-A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links. Includes a built-in **automated evaluation suite** that scores every deployment on faithfulness, answer relevance, citation accuracy, and latency using Gemini 2.5 Flash as an LLM judge.
+A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links. Includes a built-in **automated evaluation suite** that scores every deployment on faithfulness, answer relevance, citation accuracy, and latency using Gemini 2.5 Flash as an LLM judge, plus an **ML observability layer** that logs retrieval telemetry to BigQuery, reranks results with Vertex AI Ranking, scores drift with IsolationForest, and retrains the anomaly model from production traces.
 
 ```
 $ SESSION=$(curl -s -X POST https://<your-service>/apps/agent/users/u1/sessions \
@@ -25,23 +25,32 @@ Use absorbent pads and follow established spill response procedures.
 |---|---|
 | Cloud Run | Hosts the ADK agent |
 | Vertex AI Search (Enterprise) | RAG — indexes documents and retrieves relevant passages (extractive answers) for the LLM to synthesize |
+| Vertex AI Ranking API | Re-ranks retrieved chunks before generation |
 | Cloud Storage | Stores the document corpus (public read for citation links) |
+| BigQuery | Structured telemetry store for retrieval, latency, hallucination, and drift metrics |
 | Artifact Registry | Container images for agent builds |
 | Workload Identity Federation | Secretless GitHub Actions auth |
 
 ## Architecture
 
 ```
+Cloud Storage (docs/ bucket, public read, HTTPS citation links)
+     │ indexed into
+     ▼
+Vertex AI Search Enterprise (LLM add-on, extractive answers)
+
 User question
      │
      ▼
 Cloud Run (Google ADK — Gemini 2.5 Flash via Agent Platform)
-     │  calls search_knowledge_base()
+     │ calls search_knowledge_base()
      ▼
-Vertex AI Search Enterprise (LLM add-on, extractive answers)
-     │  indexed from
+Retrieved chunks
+     │
      ▼
-Cloud Storage (docs/ bucket, public read, HTTPS citation links)
+Vertex AI Ranking API + IsolationForest drift scorer
+     ├── Gemini 2.5 Flash synthesizes cited answer
+     └── BigQuery logs retrieval + answer quality telemetry
 ```
 
 ## Prerequisites
@@ -129,6 +138,7 @@ git add .github/workflows/ && git commit -m "Activate CI workflows" && git push
 |---|---|---|
 | `deploy.yml` | Push to `src/` | Rebuilds and redeploys the Cloud Run agent |
 | `run-evals.yml` | Push to `src/` or `tests/`, weekly | Runs the 12-case eval suite via Gemini judge; fails CI if metrics drop below threshold |
+| `retrain-observability.yml` | Weekly or manual | Retrains the IsolationForest drift model from the last 30 days of BigQuery telemetry and uploads `model.pkl` to GCS |
 
 No GCP credentials stored as secrets — all auth via Workload Identity Federation.
 
