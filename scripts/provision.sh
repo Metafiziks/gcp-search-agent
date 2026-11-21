@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Protected mode (KB_ACCESS_MODE=protected): document-level access control, see guides/protected-mode.md
+if [ "${KB_ACCESS_MODE:-sample}" = "protected" ]; then
+  exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/provision_protected.sh"
+fi
+
 PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID env var}"
 ENV_NAME="${ENV_NAME:-search-agent}"
 REGION="${REGION:-us-central1}"

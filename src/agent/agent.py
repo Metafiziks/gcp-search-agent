@@ -237,7 +237,9 @@ if memory.is_enabled():
 
 root_agent = Agent(
     name="search_agent",
-    model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+    # gemini-2.5-* were retired 2026-10-20; current GA models are served from the global endpoint
+    # (deploy.sh sets GOOGLE_CLOUD_LOCATION=global for the model client).
+    model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),
     instruction=INSTRUCTIONS,
     tools=TOOLS,
 )

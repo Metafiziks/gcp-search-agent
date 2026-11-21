@@ -10,3 +10,6 @@ dist/
 *.egg-info/
 .DS_Store
 eval_results.json
+
+# Project created by scripts/provision.sh with CREATE_PROJECT=1
+.protected-project
