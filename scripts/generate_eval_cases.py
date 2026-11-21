@@ -38,7 +38,8 @@ from google.genai import types
 
 PROJECT_ID  = os.environ.get("PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 REGION      = os.environ.get("REGION", "us-central1")
-MODEL       = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL       = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")  # gemini-2.5-* retired 2026-10-20
+GEMINI_LOCATION = os.environ.get("GEMINI_LOCATION", "global")  # current Gemini models are served from global
 DOCS_DIR    = Path(__file__).parent.parent / "docs"
 OUTPUT_PATH = Path(__file__).parent.parent / "tests" / "eval_cases.json"
 
@@ -195,7 +196,7 @@ def main():
     print(f"Model: {MODEL}  Project: {PROJECT_ID}")
     print()
 
-    client = genai.Client(vertexai=True, project=PROJECT_ID, location=REGION)
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location=GEMINI_LOCATION)
 
     all_cases = []
     for doc_path in doc_files:
