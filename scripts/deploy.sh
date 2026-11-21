@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Protected mode (KB_ACCESS_MODE=protected): document-level access control, see guides/protected-mode.md
+if [ "${KB_ACCESS_MODE:-sample}" = "protected" ]; then
+  exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy_protected.sh"
+fi
+
 PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID env var}"
 ENV_NAME="${ENV_NAME:-search-agent}"
 REGION="${REGION:-us-central1}"
@@ -24,7 +29,7 @@ adk deploy cloud_run \
   -- \
   --service-account "$AGENT_SA" \
   --memory 1Gi \
-  --set-env-vars "PROJECT_ID=${PROJECT_ID},SEARCH_DATASTORE_ID=${DATASTORE_ID},SEARCH_ENGINE_ID=${ENGINE_ID},SEARCH_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION},BQ_DATASET_ID=${BQ_DATASET_ID},GCS_MODEL_PATH=${GCS_MODEL_PATH}" \
+  --set-env-vars "PROJECT_ID=${PROJECT_ID},SEARCH_DATASTORE_ID=${DATASTORE_ID},SEARCH_ENGINE_ID=${ENGINE_ID},SEARCH_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${GEMINI_LOCATION:-global},BQ_DATASET_ID=${BQ_DATASET_ID},GCS_MODEL_PATH=${GCS_MODEL_PATH}" \
   --allow-unauthenticated
 echo "  ✓ Agent deployed"
 echo ""

@@ -11,7 +11,7 @@ Metrics:
   faithfulness     (LLM-as-judge)  — every claim grounded in cited sources (0–1)
   answer_relevance (LLM-as-judge)  — answer fully addresses the question (0–1)
 
-Judge model: gemini-2.5-flash via Vertex AI (separate call from agent)
+Judge model: gemini-3.5-flash via Vertex AI (global endpoint) (separate call from agent)
 
 Pass thresholds (configurable via env vars):
   THRESHOLD_FAITHFULNESS    default 0.70
@@ -63,7 +63,8 @@ except ImportError:
 SERVICE_URL = os.environ.get("SERVICE_URL", "").rstrip("/")
 PROJECT_ID  = os.environ.get("PROJECT_ID", "")
 REGION      = os.environ.get("REGION", "us-central1")
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gemini-2.5-flash")
+JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gemini-3.5-flash")  # gemini-2.5-* retired 2026-10-20
+GEMINI_LOCATION = os.environ.get("GEMINI_LOCATION", "global")  # current Gemini models are served from global
 APP_NAME    = os.environ.get("ADK_APP_NAME", "agent")
 
 THRESHOLDS = {
@@ -238,7 +239,7 @@ def score_citation_recall(citations: list[str], expected_sources: list[str]) -> 
     return 0.0
 
 # ---------------------------------------------------------------------------
-# LLM-as-judge scorer (Gemini 2.5 Flash via Vertex AI)
+# LLM-as-judge scorer (Gemini 3.5 Flash via Vertex AI)
 # ---------------------------------------------------------------------------
 
 JUDGE_PROMPT = """\
@@ -283,7 +284,7 @@ def call_judge(question: str, answer: str, citations: list[str]) -> dict:
 
     for attempt in range(4):
         try:
-            client = genai.Client(vertexai=True, project=PROJECT_ID, location=REGION)
+            client = genai.Client(vertexai=True, project=PROJECT_ID, location=GEMINI_LOCATION)
             response = client.models.generate_content(
                 model=JUDGE_MODEL,
                 contents=prompt,
