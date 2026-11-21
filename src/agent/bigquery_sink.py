@@ -61,6 +61,11 @@ def log_async(
     citation_count: Optional[int] = None,
     hhem_score: Optional[float] = None,
     latency_ms: Optional[float] = None,
+    memory_enabled: bool = False,
+    memory_backend: str = "disabled",
+    memory_read_count: int = 0,
+    memory_write_count: int = 0,
+    memory_latency_ms: Optional[float] = None,
 ) -> None:
     """
     Enqueue a telemetry row into BigQuery.
@@ -84,5 +89,47 @@ def log_async(
         "citation_count":          citation_count,
         "hhem_score":              round(hhem_score, 6) if hhem_score is not None else None,
         "latency_ms":              round(latency_ms, 2) if latency_ms is not None else None,
+        "memory_enabled":          memory_enabled,
+        "memory_backend":          memory_backend,
+        "memory_read_count":       memory_read_count,
+        "memory_write_count":      memory_write_count,
+        "memory_latency_ms":       round(memory_latency_ms, 2) if memory_latency_ms is not None else None,
+    }
+    threading.Thread(target=_write, args=(row,), daemon=True).start()
+
+
+def log_memory_async(
+    *,
+    request_id: str,
+    query: str,
+    memory_enabled: bool,
+    memory_backend: str,
+    memory_read_count: int,
+    memory_write_count: int,
+    memory_latency_ms: float,
+) -> None:
+    row = {
+        "timestamp":               datetime.datetime.utcnow().isoformat() + "Z",
+        "request_id":              request_id,
+        "query":                   query[:1024],
+        "source":                  "memory",
+        "search_latency_ms":       None,
+        "retrieval_score_mean":    None,
+        "retrieval_score_std":     None,
+        "retrieval_score_entropy": None,
+        "chunk_count":             None,
+        "reranker_score_mean":     None,
+        "anomaly_score":           None,
+        "is_anomaly":              None,
+        "is_baseline":             False,
+        "answer_length":           None,
+        "citation_count":          None,
+        "hhem_score":              None,
+        "latency_ms":              None,
+        "memory_enabled":          memory_enabled,
+        "memory_backend":          memory_backend,
+        "memory_read_count":       memory_read_count,
+        "memory_write_count":      memory_write_count,
+        "memory_latency_ms":       round(memory_latency_ms, 2),
     }
     threading.Thread(target=_write, args=(row,), daemon=True).start()
