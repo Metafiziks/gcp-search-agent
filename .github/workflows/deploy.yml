@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   deploy:
+    if: ${{ vars.KB_ACCESS_MODE != 'protected' }}
     runs-on: ubuntu-latest
 
     env:

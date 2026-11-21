@@ -1,6 +1,6 @@
 # gcp-search-agent
 
-A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links. Includes a built-in **automated evaluation suite** that scores every deployment on faithfulness, answer relevance, citation accuracy, and latency using Gemini 2.5 Flash as an LLM judge, plus an **ML observability layer** that logs retrieval telemetry to BigQuery, reranks results with Vertex AI Ranking, scores drift with IsolationForest, and retrains the anomaly model from production traces.
+A Terraform + Google ADK template that deploys a **Gemini Enterprise Agent Platform + Cloud Run hosted agent** backed by your own document corpus. Ask questions in natural language — the agent synthesizes answers and cites source files with direct links. Includes a built-in **automated evaluation suite** that scores every deployment on faithfulness, answer relevance, citation accuracy, and latency using Gemini 3.5 Flash as an LLM judge, plus an **ML observability layer** that logs retrieval telemetry to BigQuery, reranks results with Vertex AI Ranking, scores drift with IsolationForest, and retrains the anomaly model from production traces.
 
 ```
 $ SESSION=$(curl -s -X POST https://<your-service>/apps/agent/users/u1/sessions \
@@ -26,7 +26,7 @@ Use absorbent pads and follow established spill response procedures.
 | Cloud Run | Hosts the ADK agent |
 | Vertex AI Search (Enterprise) | RAG — indexes documents and retrieves relevant passages (extractive answers) for the LLM to synthesize |
 | Vertex AI Ranking API | Re-ranks retrieved chunks before generation |
-| Cloud Storage | Stores the document corpus (public read for citation links) |
+| Cloud Storage | Stores the document corpus (public read for citation links in sample mode; private in [protected mode](#protected-mode)) |
 | BigQuery | Structured telemetry store for retrieval, latency, hallucination, and drift metrics |
 | Artifact Registry | Container images for agent builds |
 | Workload Identity Federation | Secretless GitHub Actions auth |
@@ -42,14 +42,14 @@ Vertex AI Search Enterprise (LLM add-on, extractive answers)
 User question
      │
      ▼
-Cloud Run (Google ADK — Gemini 2.5 Flash via Agent Platform)
+Cloud Run (Google ADK — Gemini 3.5 Flash via Agent Platform)
      │ calls search_knowledge_base()
      ▼
 Retrieved chunks
      │
      ▼
 Vertex AI Ranking API + IsolationForest drift scorer
-     ├── Gemini 2.5 Flash synthesizes cited answer
+     ├── Gemini 3.5 Flash synthesizes cited answer
      └── BigQuery logs retrieval + answer quality telemetry
 ```
 
@@ -106,6 +106,35 @@ docs/
 
 Any folder structure is preserved as the GCS path and appears in citation links.
 
+> Sample mode makes the bucket **publicly readable** so citation links work. Use it only for public documents. For internal knowledge bases use [protected mode](#protected-mode).
+
+## Protected mode
+
+Set `KB_ACCESS_MODE=protected` so the agent answers only from documents the **signed-in end user** may read. It uses [Agent Search data source access control](https://docs.cloud.google.com/generative-ai-app-builder/docs/data-source-access-control) (**Preview**): each document carries an ACL, and Search filters results against the caller's identity. The agent searches with the user's own Google access token, not its service account, and the model never makes access decisions. This is the GCP counterpart of the Azure Purview mode, but ACLs come from a manifest you supply rather than labels inside the files.
+
+```mermaid
+flowchart LR
+    U([User]) --> B["Trusted backend<br/>validates the user"]
+    B -->|"backend ID token +<br/>user access token"| R["Private Cloud Run<br/>stateless, no document access"]
+    R -->|"search as the USER"| S[("Agent Search<br/>ACL-enabled store")]
+    S -->|"only readable documents"| R
+    R -->|"excerpts"| G["Gemini<br/>no tools, no memory"]
+    S -.-> C[("Private bucket<br/>no public access")]
+```
+
+```bash
+export KB_ACCESS_MODE=protected PROJECT_ID=<dedicated-project>
+export SEARCH_MEMBERS="user:a@example.com" BACKEND_INVOKERS="serviceAccount:backend@<project>.iam.gserviceaccount.com"
+bash scripts/provision.sh                                   # private bucket, ACL-enabled store, least-privilege IAM
+python3 scripts/ingest_protected.py --project <project> --bucket <bucket> --datastore <ds> --engine <engine> \
+  --directory /path/outside/repo                            # files + acl.json, waits for a clean import
+bash scripts/deploy.sh                                      # private Cloud Run, no evals/telemetry/sessions
+python3 scripts/test_protected_live.py --service-url <url> --bucket <bucket> ...   # two-user acceptance test
+bash scripts/teardown.sh
+```
+
+Optionally `CREATE_PROJECT=1` / `DELETE_PROJECT=1` also create and delete the dedicated project. Protected mode uses a separate Terraform root (`terraform/protected`) and never creates the public bucket or uploads `docs/`; default behavior is unchanged. Live-tested end to end in November 2026 (provision, ingest, deploy, two-user acceptance, teardown): user A got the restricted fact with a citation, user B and the control got nothing, and anonymous reads were denied. **Access control is eventually consistent after an import (an unauthorized user retrieved the restricted document for about ten minutes in testing): keep real traffic off until the acceptance gate passes.** Needs a project under a Google Workspace / Cloud Identity organization (or Workforce Identity Federation), not a no-domain org. Setup, calling convention, acceptance test and limits (not file encryption, Preview, no documented ACL propagation time, not production app sign-in) are in the [protected-mode guide](guides/protected-mode.md).
+
 ## Environment variables
 
 | Variable | Required | Default | Description |
@@ -114,7 +143,12 @@ Any folder structure is preserved as the GCS path and appears in citation links.
 | `GITHUB_REPO` | ✅ | — | `owner/repo` for Workload Identity |
 | `ENV_NAME` | — | `search-agent` | Prefix for all resource names |
 | `REGION` | — | `us-central1` | Cloud Run + Artifact Registry region |
-| `GEMINI_MODEL` | — | `gemini-2.5-flash` | Override the Gemini model |
+| `GEMINI_MODEL` | — | `gemini-3.5-flash` | Override the Gemini model (`gemini-2.5-*` was retired 2026-10-20) |
+| `GEMINI_LOCATION` | — | `global` | Vertex AI location for Gemini calls; current models are served from `global` |
+| `KB_ACCESS_MODE` | — | `sample` | `sample` or `protected` (see [Protected mode](#protected-mode)) |
+| `SEARCH_MEMBERS` / `BACKEND_INVOKERS` / `INGEST_OPERATORS` | protected | — / — / active account | IAM members that may search / invoke the service / ingest |
+| `PROTECTED_ACCEPTANCE_CONFIG` | — | — | JSON path; makes `deploy.sh` run the two-user acceptance gate |
+| `CREATE_PROJECT` / `DELETE_PROJECT` | — | off | Protected mode only: create a labelled dedicated project (needs `ORGANIZATION_ID`/`FOLDER_ID` + `BILLING_ACCOUNT_ID`) / delete it at teardown, only if this tool created it |
 
 ## GitHub Actions CI/CD
 
@@ -279,8 +313,8 @@ Results are written to `eval_results.json`. Metrics scored:
 | Keyword Recall | Deterministic | ≥ 0.65 |
 | Citation Recall | Deterministic | ≥ 0.60 |
 | p95 Latency | Deterministic | ≤ 25000ms |
-| Faithfulness | Gemini 2.5 Flash judge | ≥ 0.70 |
-| Answer Relevance | Gemini 2.5 Flash judge | ≥ 0.75 |
+| Faithfulness | Gemini 3.5 Flash judge | ≥ 0.70 |
+| Answer Relevance | Gemini 3.5 Flash judge | ≥ 0.75 |
 
 **Keeping evals in sync with your docs:**
 
@@ -291,19 +325,20 @@ PROJECT_ID=your-project-id python3 scripts/generate_eval_cases.py
 bash scripts/eval.sh
 ```
 
-`generate_eval_cases.py` reads every `.txt` file under `docs/`, calls Gemini 2.5 Flash to generate 2 Q&A test cases per document, and writes `tests/eval_cases.json`. Running `bash scripts/provision.sh` does this automatically after each doc sync.
+`generate_eval_cases.py` reads every `.txt` file under `docs/`, calls Gemini 3.5 Flash to generate 2 Q&A test cases per document, and writes `tests/eval_cases.json`. Running `bash scripts/provision.sh` does this automatically after each doc sync.
 
 ## Comparison across cloud providers
 
 | | This template (GCP) | [AWS](https://github.com/Metafiziks/aws-bedrock-agent) | [Azure](https://github.com/Metafiziks/azd-foundry-search-agent) |
 |---|---|---|---|
 | Provision | `bash scripts/provision.sh` | `bash scripts/provision.sh` | `azd provision` |
-| LLM | Gemini 2.5 Flash (Vertex AI) | Amazon Nova Lite (Bedrock) | GPT-5 (Azure AI Foundry) |
+| LLM | Gemini 3.5 Flash (Vertex AI) | Amazon Nova Lite (Bedrock) | GPT-5 (Azure AI Foundry) |
 | Agent SDK | Google ADK + Cloud Run | Bedrock Agents (managed) | AI Foundry hosted agent |
 | RAG | Vertex AI Search Enterprise | Bedrock Knowledge Bases | Azure AI Search |
 | Vector store | Vertex AI Search (built-in) | OpenSearch Serverless | Azure AI Search (built-in) |
 | Auth | Workload Identity Federation | GitHub OIDC | Azure OIDC |
-| Eval judge | Gemini 2.5 Flash | Amazon Nova Pro | GPT-5 |
+| Eval judge | Gemini 3.5 Flash | Amazon Nova Pro | GPT-5 |
+| Protected mode | `KB_ACCESS_MODE=protected` (Agent Search ACLs, Preview) | — | `KB_ACCESS_MODE=purview` (Purview labels, preview) |
 | Teardown | `bash scripts/teardown.sh` | `bash scripts/teardown.sh` | `azd down` |
 
 ## Teardown
