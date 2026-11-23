@@ -29,7 +29,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # needed to detect changed paths
+          fetch-depth: 0  # the pushed range can span several commits; the next step diffs it
+
+      - name: Detect which paths changed
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # GitHub expressions cannot concatenate the commits' file lists, so diff the pushed range here.
+          # A manual run, a new branch, or an unreachable previous commit runs every step.
+          docs=false; code=false
+          if [ "$EVENT" = workflow_dispatch ] || [ -z "$BEFORE" ] \
+             || [ "$BEFORE" = 0000000000000000000000000000000000000000 ] \
+             || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            docs=true; code=true
+          else
+            changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
+            grep -q '^docs/' <<<"$changed" && docs=true
+            grep -qE '^(src/|terraform/|scripts/deploy\.sh$|scripts/provision\.sh$)' <<<"$changed" && code=true
+          fi
+          echo "docs=$docs"  >> "$GITHUB_OUTPUT"
+          echo "code=$code"  >> "$GITHUB_OUTPUT"
+          echo "docs changed: $docs, code changed: $code"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -52,20 +74,16 @@ jobs:
         run: pip install google-adk google-genai google-cloud-discoveryengine -q
 
       - name: Sync docs to GCS + re-index (docs changes)
-        if: |
-          github.event_name == 'workflow_dispatch' ||
-          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'docs/')
+        if: steps.changes.outputs.docs == 'true'
         env:
-          SEARCH_DATASTORE_ID: ${{ vars.SEARCH_DATASTORE_ID }}
-          DOCS_BUCKET: ${{ vars.DOCS_BUCKET }}
+          SEARCH_DATASTORE_ID: ${{ secrets.SEARCH_DATASTORE_ID }}
+          DOCS_BUCKET: ${{ secrets.DOCS_BUCKET }}
         run: |
           gcloud storage rsync -r docs/ "gs://${DOCS_BUCKET}/docs/" --project="${PROJECT_ID}"
           python3 scripts/import_docs.py "$PROJECT_ID" "$SEARCH_DATASTORE_ID" "$DOCS_BUCKET"
 
       - name: Re-generate eval cases from updated docs
-        if: |
-          github.event_name == 'workflow_dispatch' ||
-          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'docs/')
+        if: steps.changes.outputs.docs == 'true'
         run: |
           PROJECT_ID="${PROJECT_ID}" REGION="${REGION}" \
             python3 scripts/generate_eval_cases.py
@@ -75,12 +93,7 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: regenerate eval cases from updated docs [skip ci]" && git push
 
       - name: Deploy agent to Cloud Run (agent/infra changes)
-        if: |
-          github.event_name == 'workflow_dispatch' ||
-          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'src/') ||
-          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'terraform/') ||
-          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'scripts/deploy.sh') ||
-          contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'scripts/provision.sh')
+        if: steps.changes.outputs.code == 'true'
         env:
-          SEARCH_DATASTORE_ID: ${{ vars.SEARCH_DATASTORE_ID }}
+          SEARCH_DATASTORE_ID: ${{ secrets.SEARCH_DATASTORE_ID }}
         run: bash scripts/deploy.sh
