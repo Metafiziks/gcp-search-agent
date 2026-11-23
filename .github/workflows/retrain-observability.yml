@@ -26,8 +26,8 @@ jobs:
 
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account:            ${{ vars.WIF_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account:            ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
@@ -42,7 +42,7 @@ jobs:
 
       - name: Retrain IsolationForest
         env:
-          PROJECT_ID:           ${{ vars.PROJECT_ID }}
+          PROJECT_ID:           ${{ secrets.PROJECT_ID }}
           GCS_MODEL_PATH:       ${{ vars.GCS_MODEL_PATH }}
           BQ_DATASET_ID:        agent_observability
           RETRAIN_LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '30' }}

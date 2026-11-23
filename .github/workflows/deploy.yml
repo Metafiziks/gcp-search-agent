@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PROJECT_ID:  ${{ vars.PROJECT_ID }}
+      PROJECT_ID:  ${{ secrets.PROJECT_ID }}
       ENV_NAME:    ${{ vars.ENV_NAME || 'search-agent' }}
       REGION:      ${{ vars.REGION || 'us-central1' }}
       GITHUB_REPO: ${{ github.repository }}
@@ -34,8 +34,8 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
