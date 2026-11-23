@@ -413,3 +413,7 @@ Deletes the Cloud Run service first (deployed outside Terraform by ADK), then ru
 | `serving config not found` | Ensure serving config name is `default_search` (not `default_config`) |
 | `gsutil` Python version error | Use `gcloud storage rsync` instead |
 | `MEMORY_BACKEND=memory_bank` returns unavailable | This Cloud Run template does not provision Vertex AI Agent Engine Memory Bank; use `session_state`, or deploy through Agent Engine and configure ADK memory |
+
+## License
+
+[MIT](LICENSE).
